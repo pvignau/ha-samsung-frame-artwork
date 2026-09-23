@@ -64,6 +64,11 @@ redirection de partition iCloud et d'une traversée de chemin via les noms de
 fichiers iCloud, bornage des dimensions d'image, `unique_id` sur la config entry,
 dépendance `samsungtvws` épinglée sur un commit, traductions FR.
 
+Le catalogue était également plafonné à 5 pages de scraping, soit les 75 œuvres
+les plus récentes — toutes issues du même lot saisonnier (77 % de Noël). La
+borne est portée à 40 pages (la boucle s'arrête d'elle-même sur la première page
+vide) : **333 œuvres** indexées, 21 % de Noël.
+
 ### 1.1.0
 
 Version initiale : config flow, deux sources, rotation pondérée, historique persistant.

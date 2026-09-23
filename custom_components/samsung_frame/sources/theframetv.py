@@ -21,6 +21,14 @@ HEADERS = {
     "User-Agent": "Mozilla/5.0 (compatible; FrameUpdater/1.0)"
 }
 
+# Le catalogue tient sur une vingtaine de pages de 15 oeuvres. La boucle de
+# scraping s'arrete d'elle-meme des qu'une page ne renvoie plus rien, donc cette
+# borne n'est qu'un garde-fou : elle doit rester largement au-dessus du nombre
+# reel de pages, sans quoi on ne recupere que la tete de liste. Avec une borne
+# trop basse (5 auparavant) l'index se limitait aux 75 oeuvres les plus
+# recentes, toutes issues du meme lot saisonnier.
+DEFAULT_MAX_PAGES = 40
+
 # Sélecteurs des cartes d'artwork sur la grille /arts/ (thème WordPress Raven/Elementor).
 # Vérifiés sur le HTML réel : <div class="raven-grid-item raven-post-item ...">
 #   <div class="raven-post"><div class="raven-post-image-wrap">
@@ -186,7 +194,7 @@ def _parse_items(soup: BeautifulSoup) -> list[dict]:
     return artworks
 
 
-def fetch_artwork_list(max_pages: int = 5) -> list[dict]:
+def fetch_artwork_list(max_pages: int = DEFAULT_MAX_PAGES) -> list[dict]:
     """
     Scrape theframetv.com/arts/ et retourne la liste des artworks disponibles.
     Retourne une liste de dicts: [{name, thumb_url, full_url, page_url}]
@@ -330,7 +338,7 @@ def index_age_days(index_file: str) -> float | None:
     return max(0.0, (time.time() - mtime) / 86400.0)
 
 
-def refresh_index(index_file: str, max_pages: int = 5) -> list[dict]:
+def refresh_index(index_file: str, max_pages: int = DEFAULT_MAX_PAGES) -> list[dict]:
     """
     Rafraîchit l'index en scrapant le site et le sauvegarde dans index_file.
 
