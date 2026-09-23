@@ -2,15 +2,17 @@
 from __future__ import annotations
 
 import os
+import re
 import random
 import logging
-from datetime import timedelta, datetime
+from datetime import timedelta
 from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.helpers.storage import Store
+from homeassistant.util import dt as dt_util
 
 from .const import (
     DOMAIN, STORAGE_VERSION,
@@ -19,14 +21,27 @@ from .const import (
     CONF_ICLOUD_ENABLED, CONF_ICLOUD_WEIGHT, CONF_ICLOUD_URL,
     CONF_INTERVAL_HOURS, CONF_HISTORY_SIZE,
     CONF_IMAGE_MODE, CONF_IMAGE_WIDTH, CONF_IMAGE_HEIGHT,
+    CONF_MAX_TV_IMAGES, CONF_CACHE_MAX_MB, CONF_INDEX_REFRESH_DAYS,
     DEFAULT_TV_PORT, DEFAULT_THEFRAMETV_WEIGHT, DEFAULT_ICLOUD_WEIGHT,
     DEFAULT_INTERVAL_HOURS, DEFAULT_HISTORY_SIZE,
     DEFAULT_IMAGE_MODE, DEFAULT_IMAGE_WIDTH, DEFAULT_IMAGE_HEIGHT,
+    DEFAULT_MAX_TV_IMAGES, DEFAULT_CACHE_MAX_MB, DEFAULT_INDEX_REFRESH_DAYS,
 )
 from .sources import theframetv, icloud
 from . import uploader
 
 _LOGGER = logging.getLogger(__name__)
+
+# Maximum length of an HA state string is 255 – keep a small safety margin.
+MAX_NAME_LENGTH = 250
+
+# Scraped artwork titles are prefixed with SEO noise such as
+# "Download Free Samsung 4K Frame TV Arts - <real title>".
+_NAME_PREFIX_RE = re.compile(
+    r"^[\s\-_]*download[\s\-_]+free[\s\-_]+samsung[\s\-_]*"
+    r"(?:4[\s\-_]*k[\s\-_]*)?frame[\s\-_]*tv[\s\-_]+art(?:works?|s)?\b[\s\-_:.|–—]*",
+    re.IGNORECASE,
+)
 
 
 class SamsungFrameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -114,6 +129,11 @@ class SamsungFrameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         tf_cache = self._cache_dir("theframetv")
         ic_cache = self._cache_dir("icloud")
 
+        # Keep the theframetv catalogue fresh, otherwise the rotation keeps
+        # cycling over the same stale (and possibly seasonal) artworks.
+        if cfg.get(CONF_THEFRAMETV_ENABLED, True):
+            await self._async_refresh_index_if_stale(cfg, index_file)
+
         # Fetch image in executor (sync network calls)
         result = await self.hass.async_add_executor_job(
             self._get_image_sync,
@@ -130,12 +150,15 @@ class SamsungFrameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     self._get_image_sync,
                     cfg, fallback, tf_history, ic_history, index_file, tf_cache, ic_cache,
                 )
+                if result is not None:
+                    source = fallback
 
         if result is None:
             raise UpdateFailed("All artwork sources failed to produce an image")
 
         # Upload to the TV (native async)
         success = await uploader.upload_to_frame(
+            self.hass,
             image_path=result["path"],
             tv_ip=cfg[CONF_TV_IP],
             tv_port=cfg.get(CONF_TV_PORT, DEFAULT_TV_PORT),
@@ -146,9 +169,13 @@ class SamsungFrameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "mode": cfg.get(CONF_IMAGE_MODE, DEFAULT_IMAGE_MODE),
                 "jpeg_quality": 95,
             },
+            max_tv_images=cfg.get(CONF_MAX_TV_IMAGES, DEFAULT_MAX_TV_IMAGES),
         )
         if not success:
-            raise UpdateFailed(f"Failed to upload image to TV at {cfg[CONF_TV_IP]}")
+            raise UpdateFailed(
+                f"Failed to upload image to TV at {cfg[CONF_TV_IP]} – the TV internal "
+                "memory may be full, or the TV may be unreachable / not in Art Mode"
+            )
 
         # Persist history and current state
         if source == "theframetv":
@@ -157,10 +184,10 @@ class SamsungFrameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             ic_history.append(result["source_id"])
 
         current = {
-            "name": result["name"],
+            "name": self._clean_name(result["name"]),
             "source": source,
             "path": result["path"],
-            "last_update": datetime.now().isoformat(),
+            "last_update": dt_util.now().isoformat(),
         }
         await self._store.async_save({
             "theframetv_history": tf_history,
@@ -168,9 +195,150 @@ class SamsungFrameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "current": current,
         })
 
+        # Best-effort disk housekeeping, never fatal for the cycle.
+        await self._async_purge_caches(cfg, keep_path=result["path"])
+
         return current
 
+    async def _async_refresh_index_if_stale(self, cfg: dict[str, Any], index_file: str) -> None:
+        """Refresh the theframetv index when it is missing or older than the configured age."""
+        max_age_days = cfg.get(CONF_INDEX_REFRESH_DAYS, DEFAULT_INDEX_REFRESH_DAYS)
+        try:
+            age_days = await self.hass.async_add_executor_job(
+                theframetv.index_age_days, index_file
+            )
+        except OSError as err:
+            _LOGGER.debug("Could not determine theframetv index age: %s", err)
+            age_days = None
+
+        if age_days is not None and age_days < max_age_days:
+            return
+
+        _LOGGER.info(
+            "theframetv index is %s – refreshing (max age %s days)",
+            "missing" if age_days is None else f"{age_days:.1f} days old",
+            max_age_days,
+        )
+        try:
+            artworks = await self.hass.async_add_executor_job(
+                theframetv.refresh_index, index_file
+            )
+        except Exception as err:  # noqa: BLE001 – scraping can fail in many ways
+            _LOGGER.warning(
+                "theframetv index refresh failed (%s); continuing with the existing index", err
+            )
+            return
+        _LOGGER.info("theframetv index refreshed: %d artworks", len(artworks or []))
+
+    async def _async_purge_caches(self, cfg: dict[str, Any], keep_path: str | None) -> None:
+        """Trim each source cache directory back under the configured size budget."""
+        max_mb = cfg.get(CONF_CACHE_MAX_MB, DEFAULT_CACHE_MAX_MB)
+        try:
+            max_bytes = int(max_mb) * 1024 * 1024
+        except (TypeError, ValueError):
+            max_bytes = DEFAULT_CACHE_MAX_MB * 1024 * 1024
+        if max_bytes <= 0:
+            return
+
+        cache_dirs = [self._cache_dir("theframetv"), self._cache_dir("icloud")]
+        index_file = self._index_file()
+        try:
+            await self.hass.async_add_executor_job(
+                self._purge_caches_sync, cache_dirs, max_bytes, keep_path, index_file
+            )
+        except Exception as err:  # noqa: BLE001 – housekeeping must never break a cycle
+            _LOGGER.warning("Cache purge failed: %s", err)
+
     # ── Sync helpers (run in executor) ────────────────────────────────────────
+
+    @staticmethod
+    def _clean_name(name: Any) -> str:
+        """Strip the scraped SEO prefix and clamp the title to a valid HA state length."""
+        text = str(name or "").strip()
+        if not text:
+            return "unknown"
+
+        stripped = _NAME_PREFIX_RE.sub("", text, count=1).strip()
+        # Collapse separators left over from slug-like titles.
+        stripped = re.sub(r"\s+", " ", stripped).strip(" -_:|")
+        if not stripped:
+            stripped = text
+
+        if len(stripped) > MAX_NAME_LENGTH:
+            stripped = stripped[:MAX_NAME_LENGTH].rstrip()
+        return stripped
+
+    @staticmethod
+    def _purge_caches_sync(
+        cache_dirs: list[str],
+        max_bytes: int,
+        keep_path: str | None,
+        index_file: str,
+    ) -> int:
+        """LRU-purge regular files inside the given cache directories. Best effort.
+
+        Scope is deliberately narrow: only direct children of the given directories,
+        only regular files, no recursion, no directory removal.
+        """
+        keep_real = os.path.realpath(keep_path) if keep_path else None
+        index_real = os.path.realpath(index_file) if index_file else None
+        removed = 0
+
+        for cache_dir in cache_dirs:
+            cache_real = os.path.realpath(cache_dir)
+            entries: list[tuple[float, int, str]] = []
+            total = 0
+            try:
+                with os.scandir(cache_real) as it:
+                    for entry in it:
+                        if not entry.is_file(follow_symlinks=False):
+                            continue
+                        try:
+                            st = entry.stat(follow_symlinks=False)
+                        except OSError:
+                            continue
+                        total += st.st_size
+                        # Prefer access time; fall back to mtime when atime is unusable.
+                        last_used = st.st_atime or st.st_mtime
+                        entries.append((last_used, st.st_size, entry.path))
+            except FileNotFoundError:
+                continue
+            except OSError as err:
+                _LOGGER.warning("Could not scan cache directory %s: %s", cache_real, err)
+                continue
+
+            if total <= max_bytes:
+                continue
+
+            _LOGGER.info(
+                "Cache %s is %.1f MB (limit %.1f MB) – purging least recently used files",
+                cache_real, total / 1048576, max_bytes / 1048576,
+            )
+
+            for _last_used, size, path in sorted(entries, key=lambda item: item[0]):
+                if total <= max_bytes:
+                    break
+                real = os.path.realpath(path)
+                # Hard scope guards: stay strictly inside this cache directory.
+                if os.path.dirname(real) != cache_real:
+                    continue
+                if real == keep_real or real == index_real:
+                    continue
+                if real.lower().endswith(".json"):
+                    continue
+                if not os.path.isfile(real) or os.path.islink(path):
+                    continue
+                try:
+                    os.remove(path)
+                except OSError as err:
+                    _LOGGER.debug("Could not remove cached file %s: %s", path, err)
+                    continue
+                total -= size
+                removed += 1
+
+        if removed:
+            _LOGGER.info("Cache purge removed %d file(s)", removed)
+        return removed
 
     @staticmethod
     def _pick_source(cfg: dict[str, Any]) -> str | None:

@@ -1,0 +1,115 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to your Samsung Frame TV",
+        "description": "Enter the local IP address of the TV. The TV must be powered on (or in Art Mode) so it can be reached. Make sure it has a fixed IP or a DHCP reservation on your router.",
+        "data": {
+          "tv_ip": "TV IP address",
+          "tv_port": "Port"
+        },
+        "data_description": {
+          "tv_ip": "Local IP address of the Frame TV, for example 192.168.1.42.",
+          "tv_port": "WebSocket port of the Samsung API. Leave 8002 (secure) unless your TV only answers on 8001."
+        }
+      },
+      "sources": {
+        "title": "Sources, rotation and image settings",
+        "description": "Choose where the artworks come from, how often they are rotated, and how they are resized before being sent to the TV.",
+        "data": {
+          "theframetv_enabled": "Enable theframetv.com",
+          "theframetv_weight": "theframetv.com weight",
+          "icloud_enabled": "Enable an iCloud shared album",
+          "icloud_weight": "iCloud weight",
+          "icloud_share_url": "iCloud shared album URL",
+          "interval_hours": "Rotation interval (hours)",
+          "history_size": "History size",
+          "max_tv_images": "Maximum images kept on the TV",
+          "cache_max_mb": "Maximum local cache size (MB)",
+          "index_refresh_days": "Catalogue refresh interval (days)",
+          "image_mode": "Resize mode",
+          "image_width": "Image width (pixels)",
+          "image_height": "Image height (pixels)"
+        },
+        "data_description": {
+          "theframetv_enabled": "Use the free artworks published on theframetv.com.",
+          "theframetv_weight": "Relative share of theframetv.com in the random draw, compared with the other enabled sources.",
+          "icloud_enabled": "Use the photos of a shared iCloud album.",
+          "icloud_weight": "Relative share of the iCloud album in the random draw, compared with the other enabled sources.",
+          "icloud_share_url": "Public link of the shared album, in the form https://www.icloud.com/photos/<token>.",
+          "interval_hours": "Delay between two artwork changes, in hours.",
+          "history_size": "Number of recently displayed artworks remembered, so they are not drawn again too soon.",
+          "max_tv_images": "Number of uploaded images kept in the TV memory. Older images are deleted from the TV automatically, which prevents its storage from filling up.",
+          "cache_max_mb": "Maximum size of the local download cache. The oldest files are removed first once this size is exceeded.",
+          "index_refresh_days": "How often the theframetv.com catalogue is scraped again to discover newly published artworks.",
+          "image_mode": "fill = the image is cropped to fill the whole screen; fit = the whole image is kept, with black bars.",
+          "image_width": "Target width before upload. 3840 matches a 4K Frame TV.",
+          "image_height": "Target height before upload. 2160 matches a 4K Frame TV."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot reach the TV at this address and port. Check that it is powered on, connected to the network, and that the IP and port are correct.",
+      "icloud_url_required": "An iCloud shared album URL is required when the iCloud source is enabled.",
+      "icloud_url_invalid": "This URL does not look like an iCloud shared album link. Expected form: https://www.icloud.com/photos/<token>.",
+      "no_source_enabled": "At least one source must be enabled: theframetv.com, the iCloud album, or both."
+    },
+    "abort": {
+      "already_configured": "This TV is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Sources, rotation and image settings",
+        "description": "Change where the artworks come from, how often they are rotated, and how they are resized before being sent to the TV.",
+        "data": {
+          "theframetv_enabled": "Enable theframetv.com",
+          "theframetv_weight": "theframetv.com weight",
+          "icloud_enabled": "Enable an iCloud shared album",
+          "icloud_weight": "iCloud weight",
+          "icloud_share_url": "iCloud shared album URL",
+          "interval_hours": "Rotation interval (hours)",
+          "history_size": "History size",
+          "max_tv_images": "Maximum images kept on the TV",
+          "cache_max_mb": "Maximum local cache size (MB)",
+          "index_refresh_days": "Catalogue refresh interval (days)",
+          "image_mode": "Resize mode",
+          "image_width": "Image width (pixels)",
+          "image_height": "Image height (pixels)"
+        },
+        "data_description": {
+          "theframetv_enabled": "Use the free artworks published on theframetv.com.",
+          "theframetv_weight": "Relative share of theframetv.com in the random draw, compared with the other enabled sources.",
+          "icloud_enabled": "Use the photos of a shared iCloud album.",
+          "icloud_weight": "Relative share of the iCloud album in the random draw, compared with the other enabled sources.",
+          "icloud_share_url": "Public link of the shared album, in the form https://www.icloud.com/photos/<token>.",
+          "interval_hours": "Delay between two artwork changes, in hours.",
+          "history_size": "Number of recently displayed artworks remembered, so they are not drawn again too soon.",
+          "max_tv_images": "Number of uploaded images kept in the TV memory. Older images are deleted from the TV automatically, which prevents its storage from filling up.",
+          "cache_max_mb": "Maximum size of the local download cache. The oldest files are removed first once this size is exceeded.",
+          "index_refresh_days": "How often the theframetv.com catalogue is scraped again to discover newly published artworks.",
+          "image_mode": "fill = the image is cropped to fill the whole screen; fit = the whole image is kept, with black bars.",
+          "image_width": "Target width before upload. 3840 matches a 4K Frame TV.",
+          "image_height": "Target height before upload. 2160 matches a 4K Frame TV."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot reach the TV at this address and port. Check that it is powered on, connected to the network, and that the IP and port are correct.",
+      "icloud_url_required": "An iCloud shared album URL is required when the iCloud source is enabled.",
+      "icloud_url_invalid": "This URL does not look like an iCloud shared album link. Expected form: https://www.icloud.com/photos/<token>.",
+      "no_source_enabled": "At least one source must be enabled: theframetv.com, the iCloud album, or both."
+    }
+  },
+  "services": {
+    "update_artwork": {
+      "name": "Update artwork",
+      "description": "Immediately pick a new image from the configured sources and push it to the Samsung Frame TV, bypassing the rotation timer."
+    },
+    "refresh_theframetv_index": {
+      "name": "Refresh theframetv.com index",
+      "description": "Scrape theframetv.com again to discover newly published free artworks and update the local index used for artwork selection."
+    }
+  }
+}

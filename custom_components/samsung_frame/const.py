@@ -16,6 +16,9 @@ CONF_HISTORY_SIZE = "history_size"
 CONF_IMAGE_MODE = "image_mode"
 CONF_IMAGE_WIDTH = "image_width"
 CONF_IMAGE_HEIGHT = "image_height"
+CONF_MAX_TV_IMAGES = "max_tv_images"
+CONF_CACHE_MAX_MB = "cache_max_mb"
+CONF_INDEX_REFRESH_DAYS = "index_refresh_days"
 
 # Default values
 DEFAULT_TV_PORT = 8002
@@ -26,6 +29,16 @@ DEFAULT_HISTORY_SIZE = 20
 DEFAULT_IMAGE_MODE = "fill"
 DEFAULT_IMAGE_WIDTH = 3840
 DEFAULT_IMAGE_HEIGHT = 2160
+DEFAULT_MAX_TV_IMAGES = 10
+DEFAULT_CACHE_MAX_MB = 300
+DEFAULT_INDEX_REFRESH_DAYS = 7
+
+# Samsung Art Mode category holding user-uploaded images
+UPLOAD_CATEGORY = "MY-C0002"
+
+# Bounds for image dimensions accepted by the config flow
+MIN_IMAGE_DIMENSION = 640
+MAX_IMAGE_DIMENSION = 7680
 
 # Storage
 STORAGE_VERSION = 1
