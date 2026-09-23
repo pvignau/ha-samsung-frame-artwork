@@ -1,0 +1,11 @@
+update_artwork:
+  name: Update Artwork
+  description: >
+    Immediately pick a new image from the configured sources and push it
+    to the Samsung Frame TV (bypasses the rotation timer).
+
+refresh_theframetv_index:
+  name: Refresh TheFrameTV Index
+  description: >
+    Re-scrape theframetv.com to discover newly published free artworks
+    and update the local index used for artwork selection.
