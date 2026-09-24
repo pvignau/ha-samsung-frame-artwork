@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import os
 import re
+import base64
+import json
 import logging
 import requests
 
@@ -184,7 +186,7 @@ def fetch_album_metadata(share_url: str) -> dict | None:
     return None
 
 
-def fetch_photo_list(share_url: str) -> list[dict]:
+def _fetch_photo_list_sharedstreams(share_url: str) -> list[dict]:
     """
     Retourne la liste des photos de l'album partagé.
     Chaque photo est un dict avec: {guid, filename, url, width, height, created}
@@ -267,6 +269,221 @@ def fetch_photo_list(share_url: str) -> list[dict]:
     return photos
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Albums partagés modernes (CloudKit)
+#
+# Les liens récents (photos.icloud.com/shared/album/...) ne sont plus servis par
+# l'API sharedstreams : Apple les résout via CloudKit. Séquence relevée sur le
+# client web officiel, en accès anonyme :
+#   1. POST ckdatabasews.icloud.com/.../public/records/resolve?sharing_url_key=TOKEN
+#      corps {"shortGUIDs":[{"value":TOKEN}]}
+#      -> results[0].anonymousPublicAccess = {token, tokenTTL, databasePartition}
+#         results[0].zoneID                = zone de l'album
+#   2. POST <databasePartition>/.../shared/changes/zone?publicAccessAuthToken=...
+#      corps {"zones":[{"zoneID":...}]}  (sans syncToken = tout le contenu)
+#      -> enregistrements CPLMaster portant les URL de téléchargement signées
+#
+# API non documentée, obtenue par observation : elle peut changer sans préavis.
+# C'est pourquoi l'ancienne implémentation est conservée en repli.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_CK_CONTAINER = "com.apple.photos.cloud"
+_CK_BASE = f"https://ckdatabasews.icloud.com/database/1/{_CK_CONTAINER}/production"
+_CK_BUILD = "2634BuildBeta18"
+_CK_CLIENT_ID = "00000000-0000-4000-8000-000000000000"
+_CK_HEADERS = {
+    "Content-Type": "text/plain;charset=UTF-8",
+    "Origin": "https://photos.icloud.com",
+    "Referer": "https://photos.icloud.com/",
+    "User-Agent": HEADERS["User-Agent"],
+}
+# Pillow ne lit pas le HEIC sans greffon : on ne prend l'original que s'il est
+# déjà dans un format sûr, sinon la dérivée JPEG générée par Apple.
+_CK_SAFE_ORIGINAL_TYPES = ("public.jpeg", "public.png")
+_CK_MAX_PAGES = 20
+
+
+def _ck_params(token: str, **extra: str) -> dict:
+    return {
+        "remapEnums": "true",
+        "getCurrentSyncToken": "true",
+        "clientBuildNumber": _CK_BUILD,
+        "clientMasteringNumber": _CK_BUILD,
+        "sharing_url_key": token,
+        **extra,
+    }
+
+
+def _ck_field(fields: dict, name: str, default=None):
+    """Valeur brute d'un champ CloudKit."""
+    entry = fields.get(name)
+    return entry.get("value", default) if isinstance(entry, dict) else default
+
+
+def _ck_decode_filename(fields: dict, fallback: str) -> str:
+    """filenameEnc est le nom de fichier encodé en base64."""
+    raw = _ck_field(fields, "filenameEnc")
+    if isinstance(raw, str) and raw:
+        try:
+            name = base64.b64decode(raw).decode("utf-8", "replace").strip()
+            if name:
+                return name
+        except (ValueError, TypeError):
+            pass
+    return fallback
+
+
+def _ck_resolve(token: str) -> dict | None:
+    """Résout le lien de partage : jeton anonyme, partition et zone de l'album."""
+    try:
+        resp = requests.post(
+            f"{_CK_BASE}/public/records/resolve",
+            params=_ck_params(token),
+            headers=_CK_HEADERS,
+            data=json.dumps({"shortGUIDs": [{"value": token}]}),
+            timeout=15,
+        )
+    except requests.RequestException as e:
+        logger.debug(f"CloudKit injoignable: {e}")
+        return None
+
+    if resp.status_code != 200:
+        logger.debug(f"CloudKit resolve a répondu {resp.status_code}")
+        return None
+
+    try:
+        result = resp.json()["results"][0]
+        access = result["anonymousPublicAccess"]
+        partition = str(access["databasePartition"]).rstrip("/")
+        resolved = {
+            "auth_token": access["token"],
+            "zone_id": result["zoneID"],
+            "base_url": f"{partition}/database/1/{_CK_CONTAINER}/production/shared",
+            "title": _ck_field(result.get("share", {}).get("fields", {}), "cloudkit.title"),
+        }
+    except (ValueError, KeyError, IndexError, TypeError) as e:
+        logger.warning(f"Réponse CloudKit inattendue: {e}")
+        return None
+
+    if not partition.startswith("https://"):
+        logger.warning(f"Partition CloudKit invalide: {partition!r}")
+        return None
+
+    logger.info(f"Album iCloud « {resolved['title']} » résolu via CloudKit ({partition})")
+    return resolved
+
+
+def _ck_pick_resource(fields: dict) -> tuple[dict, int, int] | None:
+    """Choisit la meilleure ressource lisible par Pillow. (ressource, largeur, hauteur)"""
+    original_type = _ck_field(fields, "resOriginalFileType")
+    candidates = []
+    if original_type in _CK_SAFE_ORIGINAL_TYPES:
+        candidates.append(("resOriginalRes", "resOriginalWidth", "resOriginalHeight"))
+    candidates += [
+        ("resJPEGMedRes", "resJPEGMedWidth", "resJPEGMedHeight"),
+        ("resJPEGThumbRes", "resJPEGThumbWidth", "resJPEGThumbHeight"),
+    ]
+    for res_key, w_key, h_key in candidates:
+        res = _ck_field(fields, res_key)
+        if isinstance(res, dict) and res.get("downloadURL"):
+            return res, _ck_field(fields, w_key, 0), _ck_field(fields, h_key, 0)
+    return None
+
+
+def _ck_list_photos(token: str, resolved: dict) -> list[dict]:
+    """Énumère les photos de la zone partagée (pagination via syncToken)."""
+    params = _ck_params(
+        token,
+        publicAccessAuthToken=resolved["auth_token"],
+        clientId=_CK_CLIENT_ID,
+    )
+    photos: list[dict] = []
+    sync_token = None
+
+    for _ in range(_CK_MAX_PAGES):
+        zone_request: dict = {"zoneID": resolved["zone_id"]}
+        if sync_token:
+            zone_request["syncToken"] = sync_token
+        try:
+            resp = requests.post(
+                f"{resolved['base_url']}/changes/zone",
+                params=params,
+                headers=_CK_HEADERS,
+                data=json.dumps({"zones": [zone_request]}),
+                timeout=30,
+            )
+            resp.raise_for_status()
+            zone = resp.json()["zones"][0]
+        except (requests.RequestException, ValueError, KeyError, IndexError) as e:
+            logger.warning(f"Listing CloudKit interrompu: {e}")
+            break
+
+        for record in zone.get("records", []):
+            if record.get("recordType") != "CPLMaster":
+                continue
+            fields = record.get("fields", {})
+            picked = _ck_pick_resource(fields)
+            if not picked:
+                continue
+            resource, width, height = picked
+            guid = record.get("recordName", "")
+            filename = _ck_decode_filename(fields, f"{guid}.jpg")
+            # La dérivée JPEG d'un original HEIC garde un nom en .HEIC : on
+            # rétablit l'extension réelle pour ne pas induire le cache en erreur.
+            if not filename.lower().endswith((".jpg", ".jpeg")):
+                filename = f"{filename.rsplit('.', 1)[0]}.jpg"
+            photos.append({
+                "guid": guid,
+                "filename": filename,
+                "url": resource["downloadURL"],
+                "width": width,
+                "height": height,
+                "created": _ck_field(fields, "originalCreationDate", ""),
+            })
+
+        sync_token = zone.get("syncToken")
+        if not zone.get("moreComing") or not sync_token:
+            break
+
+    logger.info(f"Album iCloud (CloudKit) : {len(photos)} photo(s) exploitable(s)")
+    return photos
+
+
+def fetch_photo_list(share_url: str) -> list[dict]:
+    """
+    Retourne la liste des photos de l'album partagé.
+    Chaque photo est un dict avec: {guid, filename, url, width, height, created}
+
+    Essaie d'abord CloudKit (liens récents), puis l'ancienne API sharedstreams.
+    """
+    token = extract_token(share_url)
+    if not token:
+        logger.error(f"URL iCloud invalide: {share_url}")
+        return []
+
+    resolved = _ck_resolve(token)
+    if resolved:
+        photos = _ck_list_photos(token, resolved)
+        if photos:
+            return photos
+        logger.warning("Album CloudKit résolu mais aucune photo exploitable")
+        return []
+
+    logger.debug("CloudKit n'a pas résolu ce lien, essai de l'API sharedstreams")
+    return _fetch_photo_list_sharedstreams(share_url)
+
+
+def _looks_like_image(head: bytes) -> bool:
+    """Reconnaît une image à sa signature, sans se fier au Content-Type annoncé."""
+    return (
+        head.startswith(b"\xff\xd8\xff")                      # JPEG
+        or head.startswith(b"\x89PNG\r\n\x1a\n")              # PNG
+        or head.startswith(b"GIF87a") or head.startswith(b"GIF89a")
+        or (head[:4] == b"RIFF" and head[8:12] == b"WEBP")     # WebP
+        or head[4:12] in (b"ftypheic", b"ftypheix", b"ftyphevc", b"ftypmif1")  # HEIF
+    )
+
+
 def download_image(photo: dict, cache_dir: str) -> str | None:
     """
     Télécharge une photo iCloud dans le cache local.
@@ -296,22 +513,29 @@ def download_image(photo: dict, cache_dir: str) -> str | None:
         resp = requests.get(url, timeout=30, stream=True)
         resp.raise_for_status()
 
-        content_type = (resp.headers.get("Content-Type") or "").lower()
-        if content_type and not content_type.startswith("image/"):
-            logger.error(
-                f"Contenu non-image ({content_type or 'inconnu'}) pour la photo {filename}"
-            )
-            return None
-
+        # Le CDN d'Apple sert les photos en application/octet-stream : se fier au
+        # Content-Type rejetterait des images parfaitement valides. On vérifie
+        # donc la signature réelle des premiers octets, ce qui est plus fiable.
         written = 0
+        head = b""
         with open(tmp_path, "wb") as f:
             for chunk in resp.iter_content(chunk_size=8192):
-                if chunk:
-                    f.write(chunk)
-                    written += len(chunk)
+                if not chunk:
+                    continue
+                if len(head) < 12:
+                    head += chunk[: 12 - len(head)]
+                f.write(chunk)
+                written += len(chunk)
 
         if written == 0:
             logger.error(f"Téléchargement vide pour la photo {filename}")
+            return None
+
+        if not _looks_like_image(head):
+            logger.error(
+                f"Contenu non reconnu comme une image pour la photo {filename} "
+                f"(premiers octets: {head[:4].hex()}, {written} octets)"
+            )
             return None
 
         os.replace(tmp_path, local_path)

@@ -15,7 +15,23 @@ en mode Art sur une TV **Samsung The Frame**.
 | Source | Description |
 |---|---|
 | **theframetv.com** | Catalogue d'œuvres gratuites 4K, scrapé et mis en cache localement |
-| **Album partagé iCloud** | Photos d'un album iCloud public (lien `https://www.icloud.com/photos/…`) |
+| **Album partagé iCloud** | Photos d'un album iCloud public (lien `https://photos.icloud.com/shared/album/…`) |
+
+#### Albums iCloud : deux générations d'API
+
+Apple a migré les albums partagés vers **CloudKit**. L'intégration gère les deux :
+
+1. **CloudKit** (liens récents) — `records/resolve` fournit un jeton d'accès
+   anonyme, la partition et la zone de l'album ; `changes/zone` énumère ensuite
+   les photos avec leurs URL signées.
+2. **`sharedstreams`** (anciens albums) — conservé en repli automatique.
+
+Quand l'original est en HEIC, que Pillow ne lit pas sans greffon, la dérivée
+JPEG générée par Apple est utilisée à la place.
+
+Ces API ne sont pas documentées : elles ont été reconstituées par observation du
+client web d'Apple et peuvent changer sans préavis. En cas de panne, le journal
+indique l'étape qui échoue.
 
 Un historique persistant évite de réafficher les mêmes œuvres tant que le
 catalogue n'a pas été parcouru.
