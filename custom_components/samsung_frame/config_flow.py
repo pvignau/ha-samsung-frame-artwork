@@ -110,7 +110,7 @@ def build_options_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
             default=_default(CONF_CACHE_MAX_MB, DEFAULT_CACHE_MAX_MB),
         ): vol.All(int, vol.Range(min=50, max=5000)),
         vol.Optional(
-            CONF_INDEX_REFRESH_DAYS, CONF_SKIP_WHEN_WATCHING,
+            CONF_INDEX_REFRESH_DAYS,
             default=_default(CONF_INDEX_REFRESH_DAYS, DEFAULT_INDEX_REFRESH_DAYS),
         ): vol.All(int, vol.Range(min=1, max=90)),
         vol.Optional(
