@@ -22,10 +22,13 @@ from .const import (
     CONF_INTERVAL_HOURS, CONF_HISTORY_SIZE,
     CONF_IMAGE_MODE, CONF_IMAGE_WIDTH, CONF_IMAGE_HEIGHT,
     CONF_MAX_TV_IMAGES, CONF_CACHE_MAX_MB, CONF_INDEX_REFRESH_DAYS,
+    CONF_SKIP_WHEN_WATCHING,
     DEFAULT_TV_PORT, DEFAULT_THEFRAMETV_WEIGHT, DEFAULT_ICLOUD_WEIGHT,
     DEFAULT_INTERVAL_HOURS, DEFAULT_HISTORY_SIZE,
     DEFAULT_IMAGE_MODE, DEFAULT_IMAGE_WIDTH, DEFAULT_IMAGE_HEIGHT,
     DEFAULT_MAX_TV_IMAGES, DEFAULT_CACHE_MAX_MB, DEFAULT_INDEX_REFRESH_DAYS,
+    DEFAULT_SKIP_WHEN_WATCHING, RETRY_WHEN_BUSY_MINUTES,
+    ART_STATE_BUSY, ART_STATE_UNREACHABLE,
 )
 from .sources import theframetv, icloud
 from . import uploader
@@ -55,6 +58,8 @@ class SamsungFrameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         cfg = self._merged_config
         interval_hours = cfg.get(CONF_INTERVAL_HOURS, DEFAULT_INTERVAL_HOURS)
+        # Nominal rotation interval, restored after a skipped (retrying) cycle.
+        self._nominal_interval = timedelta(hours=interval_hours)
 
         super().__init__(
             hass,
@@ -88,14 +93,29 @@ class SamsungFrameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             stored = await self._store.async_load() or {}
             return stored.get("current", {})
 
-        return await self._do_update()
+        return await self._do_update(force=False)
 
     # ── Public API ────────────────────────────────────────────────────────────
 
     async def async_force_update(self) -> None:
-        """Force an immediate artwork update (called by button entity or service)."""
+        """Push a new artwork right now, even if the TV is in use.
+
+        Bound to the button entity: pressing it is an explicit request, so the
+        "do not interrupt" protection is deliberately bypassed.
+        """
+        await self._async_manual_update(force=True)
+
+    async def async_request_update(self) -> None:
+        """Push a new artwork now, unless the TV is currently being watched.
+
+        Bound to the update_artwork service, which is typically called from
+        automations: there the protection still applies.
+        """
+        await self._async_manual_update(force=False)
+
+    async def _async_manual_update(self, force: bool) -> None:
         try:
-            result = await self._do_update()
+            result = await self._do_update(force=force)
             self.async_set_updated_data(result)
         except UpdateFailed as err:
             _LOGGER.error("Forced artwork update failed: %s", err)
@@ -110,9 +130,21 @@ class SamsungFrameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     # ── Internal update logic ─────────────────────────────────────────────────
 
-    async def _do_update(self) -> dict[str, Any]:
-        """Pick a source → fetch image (executor) → upload to TV (async)."""
+    async def _do_update(self, force: bool = False) -> dict[str, Any]:
+        """Pick a source → fetch image (executor) → upload to TV (async).
+
+        When `force` is False and the TV is currently showing content, nothing
+        is downloaded or uploaded: the cycle is skipped and retried shortly.
+        """
         cfg = self._merged_config
+
+        # Checked before any download: pushing an artwork switches the TV into
+        # Art Mode, which would interrupt whatever is being watched.
+        if not force and await self._async_should_skip(cfg):
+            stored = await self._store.async_load() or {}
+            return stored.get("current", self.data or {})
+
+        self._restore_nominal_interval()
 
         # Load persistent history
         stored = await self._store.async_load() or {}
@@ -199,6 +231,39 @@ class SamsungFrameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self._async_purge_caches(cfg, keep_path=result["path"])
 
         return current
+
+    async def _async_should_skip(self, cfg: dict[str, Any]) -> bool:
+        """True when the TV is in use and the rotation must not interrupt it."""
+        if not cfg.get(CONF_SKIP_WHEN_WATCHING, DEFAULT_SKIP_WHEN_WATCHING):
+            return False
+
+        state = await uploader.get_art_state(
+            self.hass,
+            tv_ip=cfg[CONF_TV_IP],
+            tv_port=cfg.get(CONF_TV_PORT, DEFAULT_TV_PORT),
+            token_file=self._token_file(),
+        )
+
+        if state == ART_STATE_BUSY:
+            retry = timedelta(minutes=RETRY_WHEN_BUSY_MINUTES)
+            _LOGGER.info(
+                "TV is in use (Art Mode off) – skipping this rotation, retrying in %d min",
+                RETRY_WHEN_BUSY_MINUTES,
+            )
+            if self.update_interval != retry:
+                self.update_interval = retry
+            return True
+
+        if state == ART_STATE_UNREACHABLE:
+            # Undetermined state: carry on, the upload itself reports a clear error.
+            _LOGGER.debug("Art Mode state undetermined, proceeding with the rotation")
+        return False
+
+    def _restore_nominal_interval(self) -> None:
+        """Return to the configured rotation interval after a retry cycle."""
+        if self.update_interval != self._nominal_interval:
+            _LOGGER.debug("Restoring the nominal rotation interval")
+            self.update_interval = self._nominal_interval
 
     async def _async_refresh_index_if_stale(self, cfg: dict[str, Any], index_file: str) -> None:
         """Refresh the theframetv index when it is missing or older than the configured age."""

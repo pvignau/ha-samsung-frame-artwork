@@ -38,6 +38,22 @@ catalogue n'a pas été parcouru.
 | `max_tv_images` | 10 | **Images conservées dans la mémoire de la TV** |
 | `cache_max_mb` | 300 | Taille max du cache disque local |
 | `index_refresh_days` | 7 | Fréquence de re-scraping du catalogue |
+| `skip_when_watching` | activé | **Ne pas interrompre le visionnage** (voir ci-dessous) |
+
+### Ne pas interrompre le visionnage
+
+Pousser une œuvre bascule la TV en mode Art, ce qui coupe ce qui est en cours de
+lecture. Quand l'option est active, la rotation programmée vérifie d'abord l'état
+du mode Art : si la TV affiche du contenu, le cycle est ignoré — rien n'est
+téléchargé ni envoyé — et réessayé toutes les 15 minutes, de sorte que l'œuvre
+change peu après l'extinction.
+
+C'est bien le mode Art qui sert de critère, et non l'alimentation : sur une
+Frame, `PowerState` vaut `on` aussi bien en mode Art qu'en cours de visionnage.
+
+Le bouton **Update Artwork Now** pousse une image dans tous les cas (action
+manuelle explicite) ; le service `samsung_frame.update_artwork`, lui, respecte la
+protection, car il est surtout appelé depuis des automatisations.
 
 ## Installation
 

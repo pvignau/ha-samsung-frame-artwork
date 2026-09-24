@@ -89,6 +89,10 @@ def build_options_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
             default=_default(CONF_INTERVAL_HOURS, DEFAULT_INTERVAL_HOURS),
         ): vol.All(int, vol.Range(min=1, max=168)),
         vol.Optional(
+            CONF_SKIP_WHEN_WATCHING,
+            default=_default(CONF_SKIP_WHEN_WATCHING, DEFAULT_SKIP_WHEN_WATCHING),
+        ): bool,
+        vol.Optional(
             CONF_HISTORY_SIZE,
             default=_default(CONF_HISTORY_SIZE, DEFAULT_HISTORY_SIZE),
         ): vol.All(int, vol.Range(min=5, max=200)),
@@ -101,7 +105,7 @@ def build_options_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
             default=_default(CONF_CACHE_MAX_MB, DEFAULT_CACHE_MAX_MB),
         ): vol.All(int, vol.Range(min=50, max=5000)),
         vol.Optional(
-            CONF_INDEX_REFRESH_DAYS,
+            CONF_INDEX_REFRESH_DAYS, CONF_SKIP_WHEN_WATCHING,
             default=_default(CONF_INDEX_REFRESH_DAYS, DEFAULT_INDEX_REFRESH_DAYS),
         ): vol.All(int, vol.Range(min=1, max=90)),
         vol.Optional(

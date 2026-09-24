@@ -58,7 +58,7 @@ def _register_services(hass: HomeAssistant) -> None:
 
     async def handle_update_artwork(call: ServiceCall) -> None:
         for coordinator in hass.data.get(DOMAIN, {}).values():
-            await coordinator.async_force_update()
+            await coordinator.async_request_update()
 
     async def handle_refresh_index(call: ServiceCall) -> None:
         for coordinator in hass.data.get(DOMAIN, {}).values():

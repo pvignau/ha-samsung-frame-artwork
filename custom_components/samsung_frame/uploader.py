@@ -11,7 +11,10 @@ from typing import TYPE_CHECKING, Any
 
 from PIL import Image
 
-from .const import DEFAULT_MAX_TV_IMAGES, UPLOAD_CATEGORY
+from .const import (
+    ART_STATE_ART, ART_STATE_BUSY, ART_STATE_UNREACHABLE,
+    DEFAULT_MAX_TV_IMAGES, UPLOAD_CATEGORY,
+)
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -231,6 +234,43 @@ def _purge_old_images(tv, current_content_id: str, max_tv_images: int) -> int:
     else:
         _LOGGER.warning("Purge sans effet: aucune image supprimée")
     return deleted
+
+
+def _sync_art_state(tv_ip: str, tv_port: int, token_file: str) -> str:
+    """
+    Determine si la TV affiche deja le mode Art (bloquant).
+
+    Sur une Frame, « art affiche » et « contenu en cours » remontent tous deux
+    PowerState=on : c'est donc l'etat du mode Art qui fait foi, pas
+    l'alimentation. Mode Art actif => remplacer l'oeuvre est invisible pour
+    l'utilisateur. Mode Art inactif => soit la TV est regardee, soit elle est
+    completement eteinte ; dans les deux cas pousser une image allumerait ou
+    detournerait l'ecran.
+    """
+    from samsungtvws.art import SamsungTVArt
+
+    tv = SamsungTVArt(host=tv_ip, port=tv_port, token_file=token_file, timeout=15)
+    try:
+        artmode = tv.get_artmode()
+    except Exception as err:  # noqa: BLE001 - TV injoignable, eteinte, timeout...
+        _LOGGER.debug("Etat du mode Art indeterminable (%s): %s", tv_ip, err)
+        return ART_STATE_UNREACHABLE
+
+    if isinstance(artmode, str) and artmode.strip().lower() == "on":
+        return ART_STATE_ART
+    return ART_STATE_BUSY
+
+
+async def get_art_state(hass: HomeAssistant, tv_ip: str, tv_port: int = 8002,
+                        token_file: str = "tv_token.txt") -> str:
+    """Retourne ART_STATE_ART, ART_STATE_BUSY ou ART_STATE_UNREACHABLE."""
+    try:
+        return await hass.async_add_executor_job(
+            _sync_art_state, tv_ip, tv_port, token_file
+        )
+    except Exception:  # noqa: BLE001 - ne doit jamais interrompre un cycle
+        _LOGGER.exception("Erreur lors de la lecture de l'etat du mode Art")
+        return ART_STATE_UNREACHABLE
 
 
 def _sync_check(tv_ip: str, tv_port: int, token_file: str) -> bool:
