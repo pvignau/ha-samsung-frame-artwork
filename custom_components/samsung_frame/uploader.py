@@ -1,6 +1,6 @@
 """
-Upload d'images vers Samsung The Frame en mode Art.
-Utilise le fork NickWaterton de samsungtvws (gère TLS, chunking, Frame 2022/2023).
+Upload images to a Samsung The Frame TV in Art Mode.
+Uses NickWaterton's samsungtvws fork (handles TLS, chunking, Frame 2022/2023).
 """
 from __future__ import annotations
 
@@ -23,20 +23,20 @@ _LOGGER = logging.getLogger(__name__)
 
 MAX_FILE_SIZE = 1_900_000  # ~1.9 MB
 
-# Détection de visages (mode "smart"). L'image est réduite avant analyse : les
-# cascades de Haar n'ont pas besoin de la pleine résolution et le coût chute.
+# Face detection ("smart" mode). The image is downscaled first: Haar cascades
+# do not need full resolution and the cost drops accordingly.
 _FACE_DETECT_MAX_DIM = 800
-# Les visages sont placés légèrement au-dessus du milieu du cadre plutôt qu'en
-# plein centre : c'est la composition habituelle d'un portrait.
+# Faces sit slightly above the middle of the frame rather than dead centre,
+# which is how a portrait is normally composed.
 _FACE_VERTICAL_ANCHOR = 0.42
 _FACE_HORIZONTAL_ANCHOR = 0.5
-# Marge ajoutée autour de la boîte des visages, en proportion de sa taille,
-# pour éviter un cadrage collé aux fronts et aux mentons.
+# Padding around the face bounding box, as a fraction of its size, so the crop
+# does not hug foreheads and chins.
 _FACE_PADDING = 0.35
 
-# Champs de date possibles dans les métadonnées renvoyées par la TV
+# Date fields that may appear in the metadata returned by the TV
 _DATE_FIELDS = ("image_date", "date", "create_date", "modified_date")
-# Formats de date rencontrés côté Samsung (EXIF-like et ISO)
+# Date formats seen on the Samsung side (EXIF-like and ISO)
 _DATE_FORMATS = (
     "%Y:%m:%d %H:%M:%S",
     "%Y-%m-%d %H:%M:%S",
@@ -48,39 +48,39 @@ _DATE_FORMATS = (
 
 def prepare_image(image_path: str, width: int = 3840, height: int = 2160,
                   mode: str = "fill", jpeg_quality: int = 85) -> bytes:
-    """Redimensionne et convertit une image pour The Frame TV."""
+    """Resize and convert an image for The Frame TV."""
     if width <= 0 or height <= 0:
         raise ValueError(
-            f"Dimensions cibles invalides: {width}x{height} (doivent être > 0)"
+            f"Invalid target dimensions: {width}x{height} (must be > 0)"
         )
 
     img = Image.open(image_path).convert("RGB")
     src_width, src_height = img.width, img.height
 
     if img.width <= 0 or img.height <= 0:
-        raise ValueError(f"Image source invalide: {src_width}x{src_height}")
+        raise ValueError(f"Invalid source image: {src_width}x{src_height}")
 
     if mode not in IMAGE_MODES:
-        _LOGGER.warning("Mode d'image inconnu '%s', repli sur 'fill'", mode)
+        _LOGGER.warning("Unknown image mode '%s', falling back to 'fill'", mode)
         mode = "fill"
 
     target_ratio = width / height
 
     if mode == "fit":
-        # Lettrebox: l'image est contenue dans un fond noir déjà à la bonne taille.
+        # Letterbox: the image sits on a black background already at the right size.
         img.thumbnail((width, height), Image.LANCZOS)
         background = Image.new("RGB", (width, height), (0, 0, 0))
         paste_x = (width - img.width) // 2
         paste_y = (height - img.height) // 2
         background.paste(img, (paste_x, paste_y))
-        img = background  # déjà exactement width x height, pas de resize final
+        img = background  # already exactly width x height, no final resize
     else:
-        # fill / smart: recadrage au bon ratio puis mise à l'échelle. En mode
-        # smart le cadre est calé sur les visages plutôt que centré.
+        # fill / smart: crop to the target ratio, then scale. In smart mode the
+        # crop window is anchored on faces instead of being centred.
         if src_width < width or src_height < height:
             _LOGGER.warning(
-                "Image source (%dx%d) plus petite que la cible (%dx%d), "
-                "upscaling appliqué (perte de qualité possible)",
+                "Source image (%dx%d) smaller than the target (%dx%d), "
+                "upscaling applied (possible quality loss)",
                 src_width, src_height, width, height,
             )
         img = _crop_to_ratio(img, target_ratio, smart=(mode == "smart"))
@@ -92,38 +92,38 @@ def prepare_image(image_path: str, width: int = 3840, height: int = 2160,
         data = buf.getvalue()
         if len(data) <= MAX_FILE_SIZE:
             if quality != jpeg_quality:
-                _LOGGER.info("Image recompressée à q%d: %d Ko", quality, len(data) // 1024)
+                _LOGGER.info("Image recompressed at q%d: %d KB", quality, len(data) // 1024)
             return data
 
     img_half = img.resize((width // 2, height // 2), Image.LANCZOS)
     buf = io.BytesIO()
     img_half.save(buf, format="JPEG", quality=70, optimize=True)
-    _LOGGER.warning("Image réduite à %dx%d", width // 2, height // 2)
+    _LOGGER.warning("Image downscaled to %dx%d", width // 2, height // 2)
     return buf.getvalue()
 
 
 def _detect_faces(img: Image.Image) -> list[tuple[int, int, int, int]]:
     """
-    Détecte les visages et retourne leurs rectangles (x, y, w, h) en
-    coordonnées de l'image d'origine. Liste vide si OpenCV est absent, si la
-    détection échoue ou si l'image ne contient personne.
+    Detect faces and return their rectangles (x, y, w, h) in the coordinates of
+    the original image. Empty list when OpenCV is missing, when detection fails
+    or when the image contains nobody.
     """
     try:
         import cv2
         import numpy as np
     except ImportError:
         _LOGGER.warning(
-            "opencv-python-headless indisponible : recadrage centré au lieu du mode smart"
+            "opencv-python-headless unavailable: centred crop instead of smart mode"
         )
         return []
 
-    # OpenCV 5 a retiré CascadeClassifier et les cascades de Haar ; le manifeste
-    # épingle donc la branche 4.x. Si une 5.x se retrouve quand même installée,
-    # on le dit clairement plutôt que de recadrer au centre sans explication.
+    # OpenCV 5 dropped CascadeClassifier and the Haar cascades, so the manifest
+    # pins the 4.x branch. Should a 5.x end up installed anyway, say so plainly
+    # rather than silently cropping to the centre.
     if not hasattr(cv2, "CascadeClassifier") or not hasattr(cv2, "data"):
         _LOGGER.warning(
-            "OpenCV %s ne fournit pas les cascades de Haar (branche 4.x requise) : "
-            "recadrage centré au lieu du mode smart",
+            "OpenCV %s does not ship the Haar cascades (4.x branch required): "
+            "centred crop instead of smart mode",
             getattr(cv2, "__version__", "?"),
         )
         return []
@@ -148,7 +148,7 @@ def _detect_faces(img: Image.Image) -> list[tuple[int, int, int, int]]:
             )
             boxes.extend(tuple(int(v) for v in box) for box in found)
             if boxes and cascade_name.startswith("haarcascade_frontalface"):
-                break  # de face suffit, inutile de payer le profil
+                break  # frontal is enough, no need to pay for the profile pass
 
         if not boxes:
             return []
@@ -158,8 +158,8 @@ def _detect_faces(img: Image.Image) -> list[tuple[int, int, int, int]]:
             (int(x * inv), int(y * inv), int(w * inv), int(h * inv))
             for x, y, w, h in boxes
         ]
-    except Exception:  # noqa: BLE001 - la détection ne doit jamais casser un upload
-        _LOGGER.exception("Détection de visages en échec, recadrage centré")
+    except Exception:  # noqa: BLE001 - detection must never break an upload
+        _LOGGER.exception("Face detection failed, cropping to the centre")
         return []
 
 
@@ -167,7 +167,7 @@ def _crop_box_for_faces(
     img_w: int, img_h: int, crop_w: int, crop_h: int,
     faces: list[tuple[int, int, int, int]],
 ) -> tuple[int, int]:
-    """Position (gauche, haut) du cadre de recadrage englobant au mieux les visages."""
+    """Position (left, top) of the crop window that best frames the faces."""
     x0 = min(f[0] for f in faces)
     y0 = min(f[1] for f in faces)
     x1 = max(f[0] + f[2] for f in faces)
@@ -178,12 +178,12 @@ def _crop_box_for_faces(
     center_x = (x0 + x1) / 2
     center_y = (y0 + y1) / 2
 
-    # Si la zone des visages (marge comprise) dépasse le cadre, on se contente
-    # de la centrer : impossible de tout garder.
+    # When the face area (padding included) exceeds the window, all we can do is
+    # centre on it: keeping everything is impossible.
     left = center_x - crop_w * _FACE_HORIZONTAL_ANCHOR
     top = center_y - crop_h * _FACE_VERTICAL_ANCHOR
 
-    # Tirer le cadre pour inclure la marge quand la place le permet.
+    # Pull the window so the padding fits whenever there is room for it.
     left = min(left, x0 - pad_x)
     left = max(left, x1 + pad_x - crop_w)
     top = min(top, y0 - pad_y)
@@ -195,7 +195,7 @@ def _crop_box_for_faces(
 
 
 def _crop_to_ratio(img: Image.Image, target_ratio: float, smart: bool) -> Image.Image:
-    """Recadre au ratio cible, centré ou calé sur les visages détectés."""
+    """Crop to the target ratio, centred or anchored on the detected faces."""
     img_ratio = img.width / img.height
     if img_ratio > target_ratio:
         crop_w, crop_h = int(img.height * target_ratio), img.height
@@ -208,12 +208,12 @@ def _crop_to_ratio(img: Image.Image, target_ratio: float, smart: bool) -> Image.
     if faces:
         left, top = _crop_box_for_faces(img.width, img.height, crop_w, crop_h, faces)
         _LOGGER.info(
-            "%d visage(s) détecté(s), recadrage calé dessus (offset %d,%d)",
+            "%d face(s) detected, crop anchored on them (offset %d,%d)",
             len(faces), left, top,
         )
     else:
         if smart:
-            _LOGGER.debug("Aucun visage détecté, recadrage centré")
+            _LOGGER.debug("No face detected, cropping to the centre")
         left = (img.width - crop_w) // 2
         top = (img.height - crop_h) // 2
 
@@ -221,7 +221,7 @@ def _crop_to_ratio(img: Image.Image, target_ratio: float, smart: bool) -> Image.
 
 
 def _parse_image_date(item: dict[str, Any]) -> datetime | None:
-    """Extrait une date exploitable des métadonnées d'une image de la TV."""
+    """Extract a usable date from the metadata of an image on the TV."""
     for field in _DATE_FIELDS:
         raw = item.get(field)
         if not raw:
@@ -240,7 +240,7 @@ def _parse_image_date(item: dict[str, Any]) -> datetime | None:
             except ValueError:
                 continue
         try:
-            # tzinfo retiré: on ne compare que des datetime naïfs entre eux
+            # tzinfo dropped: only naive datetimes are ever compared together
             return datetime.fromisoformat(value).replace(tzinfo=None)
         except ValueError:
             continue
@@ -248,7 +248,7 @@ def _parse_image_date(item: dict[str, Any]) -> datetime | None:
 
 
 def _delete_content_ids(tv, content_ids: list[str]) -> int:
-    """Supprime une liste de content_id sur la TV. Retourne le nombre supprimé."""
+    """Delete a list of content_ids from the TV. Returns how many were removed."""
     if not content_ids:
         return 0
 
@@ -257,12 +257,12 @@ def _delete_content_ids(tv, content_ids: list[str]) -> int:
         try:
             delete_list(content_ids)
             return len(content_ids)
-        except Exception as err:  # noqa: BLE001 - purge best-effort
-            _LOGGER.warning("delete_list a échoué (%s), repli sur delete unitaire", err)
+        except Exception as err:  # noqa: BLE001 - best-effort purge
+            _LOGGER.warning("delete_list failed (%s), falling back to single deletes", err)
 
     delete_one = getattr(tv, "delete", None)
     if not callable(delete_one):
-        _LOGGER.warning("Aucune API de suppression disponible dans samsungtvws")
+        _LOGGER.warning("No delete API available in samsungtvws")
         return 0
 
     deleted = 0
@@ -270,40 +270,40 @@ def _delete_content_ids(tv, content_ids: list[str]) -> int:
         try:
             delete_one(content_id)
             deleted += 1
-        except Exception as err:  # noqa: BLE001 - purge best-effort
-            _LOGGER.warning("Suppression de %s échouée: %s", content_id, err)
+        except Exception as err:  # noqa: BLE001 - best-effort purge
+            _LOGGER.warning("Deleting %s failed: %s", content_id, err)
     return deleted
 
 
 def _purge_old_images(tv, current_content_id: str, max_tv_images: int) -> int:
     """
-    Supprime les plus anciennes images de la catégorie utilisateur pour ne garder
-    que `max_tv_images` images (image courante incluse).
+    Delete the oldest images of the user category so that only `max_tv_images`
+    remain (the current image included).
 
-    Best-effort: toute erreur est logguée et n'interrompt jamais l'upload.
-    Retourne le nombre d'images effectivement supprimées.
+    Best-effort: every error is logged and never interrupts the upload.
+    Returns the number of images actually deleted.
     """
     if max_tv_images <= 0:
-        _LOGGER.debug("Purge désactivée (max_tv_images=%s)", max_tv_images)
+        _LOGGER.debug("Purge disabled (max_tv_images=%s)", max_tv_images)
         return 0
 
     available = getattr(tv, "available", None)
     if not callable(available):
-        _LOGGER.warning("API 'available' absente de samsungtvws, purge ignorée")
+        _LOGGER.warning("'available' API missing from samsungtvws, purge skipped")
         return 0
 
     try:
         items = available(UPLOAD_CATEGORY)
-    except Exception as err:  # noqa: BLE001 - purge best-effort
-        _LOGGER.warning("Impossible de lister les images de la TV: %s", err)
+    except Exception as err:  # noqa: BLE001 - best-effort purge
+        _LOGGER.warning("Could not list the images on the TV: %s", err)
         return 0
 
     if not isinstance(items, list):
-        _LOGGER.warning("Réponse inattendue de available(): %s", type(items).__name__)
+        _LOGGER.warning("Unexpected response from available(): %s", type(items).__name__)
         return 0
 
-    # On ne garde que les entrées de la catégorie utilisateur, par sécurité:
-    # jamais les catégories Samsung d'origine.
+    # Keep only the entries of the user category, as a safeguard: never the
+    # factory Samsung categories.
     user_items: list[dict[str, Any]] = []
     for item in items:
         if not isinstance(item, dict):
@@ -314,24 +314,24 @@ def _purge_old_images(tv, current_content_id: str, max_tv_images: int) -> int:
         if item.get("content_id"):
             user_items.append(item)
 
-    _LOGGER.debug("%d image(s) dans la catégorie %s", len(user_items), UPLOAD_CATEGORY)
+    _LOGGER.debug("%d image(s) in category %s", len(user_items), UPLOAD_CATEGORY)
 
-    # Tri du plus ancien au plus récent si toutes les dates sont exploitables,
-    # sinon on conserve l'ordre renvoyé par la TV.
+    # Sort oldest to newest when every date is usable, otherwise keep the order
+    # returned by the TV.
     dates = [_parse_image_date(item) for item in user_items]
     if dates and all(date is not None for date in dates):
         try:
             ordered = [item for _, item in sorted(
                 zip(dates, user_items, strict=True), key=lambda pair: pair[0]
             )]
-        except TypeError:  # dates non comparables entre elles
-            _LOGGER.debug("Dates non comparables, conservation de l'ordre de la TV")
+        except TypeError:  # dates not comparable with one another
+            _LOGGER.debug("Dates not comparable, keeping the order from the TV")
             ordered = user_items
     else:
-        _LOGGER.debug("Dates non exploitables, conservation de l'ordre de la TV")
+        _LOGGER.debug("Dates not usable, keeping the order from the TV")
         ordered = user_items
 
-    # On ne supprime jamais l'image qui vient d'être sélectionnée.
+    # The image that has just been selected is never deleted.
     candidates = [
         item["content_id"] for item in ordered
         if item["content_id"] != current_content_id
@@ -340,42 +340,41 @@ def _purge_old_images(tv, current_content_id: str, max_tv_images: int) -> int:
     excess = len(candidates) - allowed_others
     if excess <= 0:
         _LOGGER.debug(
-            "Aucune purge nécessaire (%d image(s) pour un maximum de %d)",
+            "No purge needed (%d image(s) for a maximum of %d)",
             len(candidates) + 1, max_tv_images,
         )
         return 0
 
     to_delete = candidates[:excess]
-    _LOGGER.info("Purge de %d ancienne(s) image(s) sur la TV", len(to_delete))
+    _LOGGER.info("Purging %d old image(s) from the TV", len(to_delete))
     deleted = _delete_content_ids(tv, to_delete)
     if deleted:
         _LOGGER.info(
-            "%d image(s) supprimée(s) de la TV (%d conservée(s))",
+            "%d image(s) deleted from the TV (%d kept)",
             deleted, len(candidates) + 1 - deleted,
         )
     else:
-        _LOGGER.warning("Purge sans effet: aucune image supprimée")
+        _LOGGER.warning("Purge had no effect: no image deleted")
     return deleted
 
 
 def _sync_art_state(tv_ip: str, tv_port: int, token_file: str) -> str:
     """
-    Determine si la TV affiche deja le mode Art (bloquant).
+    Determine whether the TV is already showing Art Mode (blocking).
 
-    Sur une Frame, « art affiche » et « contenu en cours » remontent tous deux
-    PowerState=on : c'est donc l'etat du mode Art qui fait foi, pas
-    l'alimentation. Mode Art actif => remplacer l'oeuvre est invisible pour
-    l'utilisateur. Mode Art inactif => soit la TV est regardee, soit elle est
-    completement eteinte ; dans les deux cas pousser une image allumerait ou
-    detournerait l'ecran.
+    On a Frame, "art on screen" and "content playing" both report PowerState=on,
+    so it is the Art Mode state that matters, not the power state. Art Mode
+    active => replacing the artwork is invisible to the user. Art Mode inactive
+    => either the TV is being watched or it is fully off; in both cases pushing
+    an image would light up or hijack the screen.
     """
     from samsungtvws.art import SamsungTVArt
 
     tv = SamsungTVArt(host=tv_ip, port=tv_port, token_file=token_file, timeout=15)
     try:
         artmode = tv.get_artmode()
-    except Exception as err:  # noqa: BLE001 - TV injoignable, eteinte, timeout...
-        _LOGGER.debug("Etat du mode Art indeterminable (%s): %s", tv_ip, err)
+    except Exception as err:  # noqa: BLE001 - TV unreachable, off, timeout...
+        _LOGGER.debug("Art Mode state undetermined (%s): %s", tv_ip, err)
         return ART_STATE_UNREACHABLE
 
     if isinstance(artmode, str) and artmode.strip().lower() == "on":
@@ -385,18 +384,18 @@ def _sync_art_state(tv_ip: str, tv_port: int, token_file: str) -> str:
 
 async def get_art_state(hass: HomeAssistant, tv_ip: str, tv_port: int = 8002,
                         token_file: str = "tv_token.txt") -> str:
-    """Retourne ART_STATE_ART, ART_STATE_BUSY ou ART_STATE_UNREACHABLE."""
+    """Return ART_STATE_ART, ART_STATE_BUSY or ART_STATE_UNREACHABLE."""
     try:
         return await hass.async_add_executor_job(
             _sync_art_state, tv_ip, tv_port, token_file
         )
-    except Exception:  # noqa: BLE001 - ne doit jamais interrompre un cycle
-        _LOGGER.exception("Erreur lors de la lecture de l'etat du mode Art")
+    except Exception:  # noqa: BLE001 - must never interrupt a cycle
+        _LOGGER.exception("Error while reading the Art Mode state")
         return ART_STATE_UNREACHABLE
 
 
 def _sync_check(tv_ip: str, tv_port: int, token_file: str) -> bool:
-    """Vérifie (bloquant) que la TV répond et supporte le mode Art."""
+    """Check (blocking) that the TV answers and supports Art Mode."""
     from samsungtvws.art import SamsungTVArt
     tv = SamsungTVArt(host=tv_ip, port=tv_port, token_file=token_file)
     return tv.supported()
@@ -405,7 +404,7 @@ def _sync_check(tv_ip: str, tv_port: int, token_file: str) -> bool:
 def _sync_upload(image_path: str, tv_ip: str, tv_port: int,
                  token_file: str, image_config: dict,
                  max_tv_images: int) -> bool:
-    """Prépare, envoie, affiche l'image puis purge les anciennes (bloquant)."""
+    """Prepare, upload and display the image, then purge the old ones (blocking)."""
     from samsungtvws.art import SamsungTVArt
 
     width = image_config.get("width", 3840)
@@ -413,32 +412,32 @@ def _sync_upload(image_path: str, tv_ip: str, tv_port: int,
     mode = image_config.get("mode", "fill")
     quality = image_config.get("jpeg_quality", 85)
 
-    _LOGGER.info("Préparation de l'image: %s", image_path)
+    _LOGGER.info("Preparing image: %s", image_path)
     image_data = prepare_image(image_path, width, height, mode, quality)
-    _LOGGER.info("  → %d Ko", len(image_data) // 1024)
+    _LOGGER.info("  -> %d KB", len(image_data) // 1024)
 
-    _LOGGER.info("Connexion à la TV: %s:%d", tv_ip, tv_port)
+    _LOGGER.info("Connecting to the TV: %s:%d", tv_ip, tv_port)
     tv = SamsungTVArt(host=tv_ip, port=tv_port, token_file=token_file, timeout=60)
 
     if not tv.supported():
-        _LOGGER.error("Cette TV ne supporte pas le mode Art")
+        _LOGGER.error("This TV does not support Art Mode")
         return False
 
-    _LOGGER.info("Upload en cours...")
+    _LOGGER.info("Uploading...")
     content_id = tv.upload(image_data, file_type="jpg", matte="none")
     if not content_id:
-        _LOGGER.error("Upload échoué (pas de content_id)")
+        _LOGGER.error("Upload failed (no content_id)")
         return False
 
     _LOGGER.info("Upload OK: %s", content_id)
     tv.select_image(content_id, category=UPLOAD_CATEGORY, show=True)
-    _LOGGER.info("Image affichée sur la TV !")
+    _LOGGER.info("Image displayed on the TV")
 
-    # Purge best-effort: ne doit jamais faire échouer un upload réussi.
+    # Best-effort purge: it must never make a successful upload fail.
     try:
         _purge_old_images(tv, content_id, max_tv_images)
-    except Exception:  # noqa: BLE001 - purge best-effort
-        _LOGGER.exception("Purge des anciennes images échouée (upload conservé)")
+    except Exception:  # noqa: BLE001 - best-effort purge
+        _LOGGER.exception("Purging old images failed (upload kept)")
 
     return True
 
@@ -448,24 +447,24 @@ async def upload_to_frame(hass: HomeAssistant, image_path: str, tv_ip: str,
                           token_file: str = "tv_token.txt",
                           image_config: dict | None = None,
                           max_tv_images: int = DEFAULT_MAX_TV_IMAGES) -> bool:
-    """Envoie une image sur la TV et purge les anciennes. True si succès."""
+    """Push an image to the TV and purge the old ones. True on success."""
     cfg = image_config or {}
     try:
         return await hass.async_add_executor_job(
             _sync_upload, image_path, tv_ip, tv_port, token_file, cfg, max_tv_images
         )
     except Exception:
-        _LOGGER.exception("Erreur upload vers la TV")
+        _LOGGER.exception("Error uploading to the TV")
         return False
 
 
 async def check_tv_connection(hass: HomeAssistant, tv_ip: str, tv_port: int = 8002,
                               token_file: str = "tv_token.txt") -> bool:
-    """Teste la connexion à la TV et le support du mode Art."""
+    """Test the connection to the TV and whether it supports Art Mode."""
     try:
         return await hass.async_add_executor_job(
             _sync_check, tv_ip, tv_port, token_file
         )
     except Exception as e:
-        _LOGGER.error("TV inaccessible (%s): %s", tv_ip, e)
+        _LOGGER.error("TV unreachable (%s): %s", tv_ip, e)
         return False

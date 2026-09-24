@@ -1,12 +1,12 @@
 """
-Source : Album partagé iCloud
-Télécharge les photos depuis un album partagé iCloud (lien public, sans authentification).
+Source: iCloud shared album
+Downloads photos from a public iCloud shared album (no authentication).
 
-Pour créer un album partagé :
-1. Ouvrir l'app Photos sur iPhone/Mac
-2. Album → Nouveau album partagé
-3. Activer "Site Web public"
-4. Copier l'URL (format: https://www.icloud.com/photos/XXXXXXXX)
+To create a shared album:
+1. Open the Photos app on iPhone/Mac
+2. Album -> New shared album
+3. Enable "Public Website"
+4. Copy the URL (e.g. https://photos.icloud.com/shared/album/XXXXXXXX)
 """
 
 from __future__ import annotations
@@ -26,27 +26,27 @@ HEADERS = {
     "Content-Type": "application/json",
 }
 
-# La partition n'est pas a deviner : elle est encodee dans le token lui-meme,
-# sur ses caracteres d'index 1 et 2, en base62. Exemples verifies :
+# The partition is not to be guessed: it is encoded in the token itself, in its
+# characters at index 1 and 2, in base62. Verified examples:
 #   B12GfnH8tC0ZuK -> "12" -> 1*62 + 2  = 64   -> p64-sharedstreams.icloud.com
 #   D2Av3xm1...    -> "2A" -> 2*62 + 10 = 134  -> p134-sharedstreams.icloud.com
-# Les partitions montent donc bien au-dela de p09.
+# Partitions therefore go well beyond p09.
 _BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 _DEFAULT_PARTITION = 1
 
-# Si la partition derivee est mauvaise, Apple repond 330 avec le bon hote dans
-# X-Apple-MMe-Host. Garde-fou contre une chaine de redirections circulaire.
+# When the derived partition is wrong, Apple answers 330 with the right host in
+# X-Apple-MMe-Host. Safeguard against a circular redirect chain.
 _MAX_REDIRECTS = 5
 
 
-# Trois formes de lien public selon l'epoque :
-#   https://www.icloud.com/photos/#B0abcdef          (la plus ancienne)
+# Three shapes of public link depending on the era:
+#   https://www.icloud.com/photos/#B0abcdef          (oldest)
 #   https://www.icloud.com/sharedalbum/#B0abcdef
-#   https://photos.icloud.com/shared/album/B0abcdef  (actuelle)
-# Le '#' est optionnel, et l'app Photos ajoute parfois le nom de l'album en
-# second fragment : .../#B0abcdef#Vacances. Le token s'arrete donc au premier
-# '#', '/' ou '?' rencontre. Doit rester coherent avec ICLOUD_URL_RE du
-# config_flow, qui valide la saisie de l'utilisateur.
+#   https://photos.icloud.com/shared/album/B0abcdef  (current)
+# The '#' is optional, and the Photos app sometimes appends the album name as a
+# second fragment: .../#B0abcdef#Holidays. The token therefore stops at the
+# first '#', '/' or '?'. Must stay in sync with ICLOUD_URL_RE in config_flow,
+# which validates what the user types.
 _TOKEN_RE = re.compile(
     r"/(?:photos|sharedalbum|shared/album)/#?([A-Za-z0-9_-]+)",
     re.IGNORECASE,
@@ -54,32 +54,32 @@ _TOKEN_RE = re.compile(
 
 
 def extract_token(share_url: str) -> str | None:
-    """Extrait le token de partage depuis l'URL iCloud, ou None si illisible."""
+    """Extract the share token from the iCloud URL, or None when unreadable."""
     match = _TOKEN_RE.search((share_url or "").strip())
     return match.group(1) if match else None
 
 
-# Ancien nom, conserve pour compatibilite interne.
+# Former name, kept for internal compatibility.
 _extract_token = extract_token
 
 
 def _safe_filename(filename: str, fallback: str) -> str:
     """
-    Assainit un nom de fichier provenant de l'API iCloud (source externe).
-    Empêche toute traversée de chemin ('/', '\\', '..') hors du répertoire de cache.
+    Sanitise a file name coming from the iCloud API (an external source).
+    Prevents any path traversal ('/', '\\', '..') outside the cache directory.
     """
-    # On ne garde que le composant final, quel que soit le séparateur utilisé.
+    # Keep only the final component, whichever separator was used.
     name = str(filename or "").replace("\\", "/").split("/")[-1]
     name = os.path.basename(name).strip()
 
-    # Neutraliser les caractères problématiques et les noms spéciaux.
+    # Neutralise problematic characters and special names.
     name = re.sub(r'[^A-Za-z0-9._-]', "_", name)
     name = name.lstrip(".")
 
     if not name or name in (".", ".."):
         name = re.sub(r'[^A-Za-z0-9._-]', "_", str(fallback or "photo")) or "photo"
 
-    # Garde une marge sous la limite classique de 255 octets des systèmes de fichiers.
+    # Leave headroom below the usual 255-byte file name limit.
     if len(name) > 200:
         root, ext = os.path.splitext(name)
         name = root[:200 - len(ext)] + ext
@@ -88,14 +88,14 @@ def _safe_filename(filename: str, fallback: str) -> str:
 
 
 def _partition_from_token(token: str) -> int:
-    """Derive le numero de partition encode dans le token (base62 des car. 1 et 2)."""
+    """Derive the partition number encoded in the token (base62 of chars 1 and 2)."""
     if len(token) < 3:
         return _DEFAULT_PARTITION
     value = 0
     for char in token[1:3]:
         index = _BASE62.find(char)
         if index < 0:
-            logger.debug(f"Caractere non base62 dans le token: {char!r}")
+            logger.debug(f"Non-base62 character in the token: {char!r}")
             return _DEFAULT_PARTITION
         value = value * 62 + index
     return value or _DEFAULT_PARTITION
@@ -106,7 +106,7 @@ def _base_url(partition: int) -> str:
 
 
 def _host_to_base_url(host: str) -> str | None:
-    """Convertit l'hote renvoye par une redirection 330 en URL de base."""
+    """Turn the host returned by a 330 redirect into a base URL."""
     host = (host or "").strip().strip("/")
     if host.startswith("http://") or host.startswith("https://"):
         host = host.split("//", 1)[1]
@@ -117,24 +117,24 @@ def _host_to_base_url(host: str) -> str | None:
 
 def fetch_album_metadata(share_url: str) -> dict | None:
     """
-    Récupère les métadonnées de l'album partagé iCloud.
-    Retourne un dict avec les infos de l'album ou None si erreur.
+    Fetch the metadata of the iCloud shared album.
+    Returns a dict with the album information, or None on error.
 
-    La partition est dérivée du token ; si elle est erronée, Apple répond par un
-    HTTP 330 contenant le bon hôte dans X-Apple-MMe-Host, qui est alors suivi.
+    The partition is derived from the token; when it is wrong, Apple answers
+    HTTP 330 with the right host in X-Apple-MMe-Host, which is then followed.
     """
     token = extract_token(share_url)
     if not token:
-        logger.error(f"URL iCloud invalide: {share_url}")
+        logger.error(f"Invalid iCloud URL: {share_url}")
         return None
 
     base_url = _base_url(_partition_from_token(token))
-    logger.debug(f"Partition dérivée du token: {base_url}")
+    logger.debug(f"Partition derived from the token: {base_url}")
     tried: set[str] = set()
 
     for _ in range(_MAX_REDIRECTS):
         if base_url in tried:
-            logger.debug(f"Hôte déjà essayé, arrêt: {base_url}")
+            logger.debug(f"Host already tried, stopping: {base_url}")
             break
         tried.add(base_url)
 
@@ -144,16 +144,16 @@ def fetch_album_metadata(share_url: str) -> dict | None:
                 api_url, headers=HEADERS, json={"streamCtag": None}, timeout=10
             )
         except requests.RequestException as e:
-            logger.warning(f"Album iCloud injoignable sur {base_url}: {e}")
+            logger.warning(f"iCloud album unreachable on {base_url}: {e}")
             return None
 
         if resp.status_code == 200:
             try:
                 payload = resp.json()
             except ValueError as e:
-                logger.warning(f"Réponse iCloud illisible ({base_url}): {e}")
+                logger.warning(f"Unreadable iCloud response ({base_url}): {e}")
                 return None
-            logger.info(f"Album iCloud trouvé sur {base_url}")
+            logger.info(f"iCloud album found on {base_url}")
             return {"token": token, "base_url": base_url, **payload}
 
         if resp.status_code == 330:
@@ -164,32 +164,32 @@ def fetch_album_metadata(share_url: str) -> dict | None:
             host = data.get("X-Apple-MMe-Host") or resp.headers.get("X-Apple-MMe-Host")
             target = _host_to_base_url(host) if host else None
             if not target:
-                logger.warning(f"Redirection iCloud illisible: {host!r}")
+                logger.warning(f"Unreadable iCloud redirect: {host!r}")
                 return None
-            logger.info(f"Redirection iCloud vers {target}")
+            logger.info(f"iCloud redirect to {target}")
             base_url = target
             continue
 
         if resp.status_code == 404:
             logger.error(
-                "Album iCloud introuvable (404) : le lien de partage est peut-être "
-                "expiré, ou le « Site Web public » n'est pas activé sur l'album."
+                "iCloud album not found (404): the share link may have expired, "
+                "or \"Public Website\" is not enabled on the album."
             )
             return None
 
         logger.warning(
-            f"Statut HTTP inattendu {resp.status_code} depuis {base_url} pour l'album iCloud"
+            f"Unexpected HTTP status {resp.status_code} from {base_url} for the iCloud album"
         )
         return None
 
-    logger.error(f"Impossible d'accéder à l'album iCloud après redirections: {share_url}")
+    logger.error(f"Could not reach the iCloud album after redirects: {share_url}")
     return None
 
 
 def _fetch_photo_list_sharedstreams(share_url: str) -> list[dict]:
     """
-    Retourne la liste des photos de l'album partagé.
-    Chaque photo est un dict avec: {guid, filename, url, width, height, created}
+    Return the list of photos of the shared album.
+    Each photo is a dict: {guid, filename, url, width, height, created}
     """
     meta = fetch_album_metadata(share_url)
     if not meta:
@@ -200,10 +200,10 @@ def _fetch_photo_list_sharedstreams(share_url: str) -> list[dict]:
     photos_raw = meta.get("photos", [])
 
     if not photos_raw:
-        logger.warning("Album vide ou format inattendu")
+        logger.warning("Empty album, or unexpected format")
         return []
 
-    # Récupérer les URLs de téléchargement
+    # Fetch the download URLs
     guids = [p["photoGuid"] for p in photos_raw]
     api_url = f"{base_url}/{token}/sharedstreams/webasseturls"
 
@@ -216,16 +216,16 @@ def _fetch_photo_list_sharedstreams(share_url: str) -> list[dict]:
         )
         if resp.status_code != 200:
             logger.warning(
-                f"Statut HTTP inattendu {resp.status_code} lors de la récupération "
-                "des URLs iCloud"
+                f"Unexpected HTTP status {resp.status_code} while fetching the "
+                "iCloud asset URLs"
             )
         resp.raise_for_status()
         asset_data = resp.json()
     except requests.RequestException as e:
-        logger.error(f"Erreur récupération URLs iCloud: {e}")
+        logger.error(f"Error fetching the iCloud asset URLs: {e}")
         return []
     except ValueError as e:
-        logger.error(f"Réponse iCloud illisible (URLs d'assets): {e}")
+        logger.error(f"Unreadable iCloud response (asset URLs): {e}")
         return []
 
     photos = []
@@ -235,7 +235,7 @@ def _fetch_photo_list_sharedstreams(share_url: str) -> list[dict]:
         guid = photo.get("photoGuid")
         derivatives = photo.get("derivatives", {})
 
-        # Prendre la meilleure résolution disponible
+        # Take the highest resolution available
         best = None
         best_size = 0
         for deriv in derivatives.values():
@@ -265,26 +265,26 @@ def _fetch_photo_list_sharedstreams(share_url: str) -> list[dict]:
             "created": photo.get("dateCreated", ""),
         })
 
-    logger.info(f"iCloud album: {len(photos)} photos trouvées")
+    logger.info(f"iCloud album: {len(photos)} photos found")
     return photos
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Albums partagés modernes (CloudKit)
+# Modern shared albums (CloudKit)
 #
-# Les liens récents (photos.icloud.com/shared/album/...) ne sont plus servis par
-# l'API sharedstreams : Apple les résout via CloudKit. Séquence relevée sur le
-# client web officiel, en accès anonyme :
+# Recent links (photos.icloud.com/shared/album/...) are no longer served by the
+# sharedstreams API: Apple resolves them through CloudKit. Sequence observed on
+# the official web client, in anonymous access:
 #   1. POST ckdatabasews.icloud.com/.../public/records/resolve?sharing_url_key=TOKEN
-#      corps {"shortGUIDs":[{"value":TOKEN}]}
+#      body {"shortGUIDs":[{"value":TOKEN}]}
 #      -> results[0].anonymousPublicAccess = {token, tokenTTL, databasePartition}
-#         results[0].zoneID                = zone de l'album
+#         results[0].zoneID                = the album zone
 #   2. POST <databasePartition>/.../shared/changes/zone?publicAccessAuthToken=...
-#      corps {"zones":[{"zoneID":...}]}  (sans syncToken = tout le contenu)
-#      -> enregistrements CPLMaster portant les URL de téléchargement signées
+#      body {"zones":[{"zoneID":...}]}  (no syncToken = the whole content)
+#      -> CPLMaster records carrying the signed download URLs
 #
-# API non documentée, obtenue par observation : elle peut changer sans préavis.
-# C'est pourquoi l'ancienne implémentation est conservée en repli.
+# Undocumented API, obtained by observation: it may change without notice.
+# That is why the former implementation is kept as a fallback.
 # ─────────────────────────────────────────────────────────────────────────────
 
 _CK_CONTAINER = "com.apple.photos.cloud"
@@ -297,8 +297,8 @@ _CK_HEADERS = {
     "Referer": "https://photos.icloud.com/",
     "User-Agent": HEADERS["User-Agent"],
 }
-# Pillow ne lit pas le HEIC sans greffon : on ne prend l'original que s'il est
-# déjà dans un format sûr, sinon la dérivée JPEG générée par Apple.
+# Pillow cannot read HEIC without a plugin, so the original is only used when it
+# already is in a safe format; otherwise Apple's own JPEG derivative is taken.
 _CK_SAFE_ORIGINAL_TYPES = ("public.jpeg", "public.png")
 _CK_MAX_PAGES = 20
 
@@ -315,13 +315,13 @@ def _ck_params(token: str, **extra: str) -> dict:
 
 
 def _ck_field(fields: dict, name: str, default=None):
-    """Valeur brute d'un champ CloudKit."""
+    """Raw value of a CloudKit field."""
     entry = fields.get(name)
     return entry.get("value", default) if isinstance(entry, dict) else default
 
 
 def _ck_decode_filename(fields: dict, fallback: str) -> str:
-    """filenameEnc est le nom de fichier encodé en base64."""
+    """filenameEnc holds the file name, base64-encoded."""
     raw = _ck_field(fields, "filenameEnc")
     if isinstance(raw, str) and raw:
         try:
@@ -334,7 +334,7 @@ def _ck_decode_filename(fields: dict, fallback: str) -> str:
 
 
 def _ck_resolve(token: str) -> dict | None:
-    """Résout le lien de partage : jeton anonyme, partition et zone de l'album."""
+    """Resolve the share link: anonymous token, partition and album zone."""
     try:
         resp = requests.post(
             f"{_CK_BASE}/public/records/resolve",
@@ -344,11 +344,11 @@ def _ck_resolve(token: str) -> dict | None:
             timeout=15,
         )
     except requests.RequestException as e:
-        logger.debug(f"CloudKit injoignable: {e}")
+        logger.debug(f"CloudKit unreachable: {e}")
         return None
 
     if resp.status_code != 200:
-        logger.debug(f"CloudKit resolve a répondu {resp.status_code}")
+        logger.debug(f"CloudKit resolve answered {resp.status_code}")
         return None
 
     try:
@@ -362,19 +362,19 @@ def _ck_resolve(token: str) -> dict | None:
             "title": _ck_field(result.get("share", {}).get("fields", {}), "cloudkit.title"),
         }
     except (ValueError, KeyError, IndexError, TypeError) as e:
-        logger.warning(f"Réponse CloudKit inattendue: {e}")
+        logger.warning(f"Unexpected CloudKit response: {e}")
         return None
 
     if not partition.startswith("https://"):
-        logger.warning(f"Partition CloudKit invalide: {partition!r}")
+        logger.warning(f"Invalid CloudKit partition: {partition!r}")
         return None
 
-    logger.info(f"Album iCloud « {resolved['title']} » résolu via CloudKit ({partition})")
+    logger.info(f"iCloud album \"{resolved['title']}\" resolved through CloudKit ({partition})")
     return resolved
 
 
 def _ck_pick_resource(fields: dict) -> tuple[dict, int, int] | None:
-    """Choisit la meilleure ressource lisible par Pillow. (ressource, largeur, hauteur)"""
+    """Pick the best resource Pillow can read. (resource, width, height)"""
     original_type = _ck_field(fields, "resOriginalFileType")
     candidates = []
     if original_type in _CK_SAFE_ORIGINAL_TYPES:
@@ -391,7 +391,7 @@ def _ck_pick_resource(fields: dict) -> tuple[dict, int, int] | None:
 
 
 def _ck_list_photos(token: str, resolved: dict) -> list[dict]:
-    """Énumère les photos de la zone partagée (pagination via syncToken)."""
+    """Enumerate the photos of the shared zone (pagination through syncToken)."""
     params = _ck_params(
         token,
         publicAccessAuthToken=resolved["auth_token"],
@@ -415,7 +415,7 @@ def _ck_list_photos(token: str, resolved: dict) -> list[dict]:
             resp.raise_for_status()
             zone = resp.json()["zones"][0]
         except (requests.RequestException, ValueError, KeyError, IndexError) as e:
-            logger.warning(f"Listing CloudKit interrompu: {e}")
+            logger.warning(f"CloudKit listing interrupted: {e}")
             break
 
         for record in zone.get("records", []):
@@ -428,8 +428,8 @@ def _ck_list_photos(token: str, resolved: dict) -> list[dict]:
             resource, width, height = picked
             guid = record.get("recordName", "")
             filename = _ck_decode_filename(fields, f"{guid}.jpg")
-            # La dérivée JPEG d'un original HEIC garde un nom en .HEIC : on
-            # rétablit l'extension réelle pour ne pas induire le cache en erreur.
+            # The JPEG derivative of a HEIC original keeps a .HEIC name: restore
+            # the real extension so the cache is not misled.
             if not filename.lower().endswith((".jpg", ".jpeg")):
                 filename = f"{filename.rsplit('.', 1)[0]}.jpg"
             photos.append({
@@ -445,20 +445,20 @@ def _ck_list_photos(token: str, resolved: dict) -> list[dict]:
         if not zone.get("moreComing") or not sync_token:
             break
 
-    logger.info(f"Album iCloud (CloudKit) : {len(photos)} photo(s) exploitable(s)")
+    logger.info(f"iCloud album (CloudKit): {len(photos)} usable photo(s)")
     return photos
 
 
 def fetch_photo_list(share_url: str) -> list[dict]:
     """
-    Retourne la liste des photos de l'album partagé.
-    Chaque photo est un dict avec: {guid, filename, url, width, height, created}
+    Return the list of photos of the shared album.
+    Each photo is a dict: {guid, filename, url, width, height, created}
 
-    Essaie d'abord CloudKit (liens récents), puis l'ancienne API sharedstreams.
+    Tries CloudKit first (recent links), then the former sharedstreams API.
     """
     token = extract_token(share_url)
     if not token:
-        logger.error(f"URL iCloud invalide: {share_url}")
+        logger.error(f"Invalid iCloud URL: {share_url}")
         return []
 
     resolved = _ck_resolve(token)
@@ -466,15 +466,15 @@ def fetch_photo_list(share_url: str) -> list[dict]:
         photos = _ck_list_photos(token, resolved)
         if photos:
             return photos
-        logger.warning("Album CloudKit résolu mais aucune photo exploitable")
+        logger.warning("CloudKit album resolved but no usable photo found")
         return []
 
-    logger.debug("CloudKit n'a pas résolu ce lien, essai de l'API sharedstreams")
+    logger.debug("CloudKit did not resolve this link, trying the sharedstreams API")
     return _fetch_photo_list_sharedstreams(share_url)
 
 
 def _looks_like_image(head: bytes) -> bool:
-    """Reconnaît une image à sa signature, sans se fier au Content-Type annoncé."""
+    """Recognise an image from its signature, without trusting the Content-Type."""
     return (
         head.startswith(b"\xff\xd8\xff")                      # JPEG
         or head.startswith(b"\x89PNG\r\n\x1a\n")              # PNG
@@ -486,10 +486,10 @@ def _looks_like_image(head: bytes) -> bool:
 
 def download_image(photo: dict, cache_dir: str) -> str | None:
     """
-    Télécharge une photo iCloud dans le cache local.
-    Le nom de fichier venant de l'API iCloud est assaini (pas de traversée de chemin),
-    et le téléchargement passe par un fichier .part renommé à la fin.
-    Retourne le chemin local ou None en cas d'échec.
+    Download an iCloud photo into the local cache.
+    The file name coming from the iCloud API is sanitised (no path traversal),
+    and the download goes through a .part file renamed at the end.
+    Returns the local path, or None on failure.
     """
     os.makedirs(cache_dir, exist_ok=True)
 
@@ -498,24 +498,24 @@ def download_image(photo: dict, cache_dir: str) -> str | None:
     local_path = os.path.join(cache_dir, filename)
 
     if os.path.exists(local_path):
-        logger.debug(f"Déjà en cache: {local_path}")
+        logger.debug(f"Already cached: {local_path}")
         return local_path
 
     url = photo.get("url", "")
     if not url:
-        logger.warning(f"Pas d'URL pour la photo {photo.get('guid')}")
+        logger.warning(f"No URL for photo {photo.get('guid')}")
         return None
 
     tmp_path = f"{local_path}.part"
 
     try:
-        logger.info(f"Téléchargement iCloud: {filename}")
+        logger.info(f"Downloading from iCloud: {filename}")
         resp = requests.get(url, timeout=30, stream=True)
         resp.raise_for_status()
 
-        # Le CDN d'Apple sert les photos en application/octet-stream : se fier au
-        # Content-Type rejetterait des images parfaitement valides. On vérifie
-        # donc la signature réelle des premiers octets, ce qui est plus fiable.
+        # Apple's CDN serves photos as application/octet-stream, so trusting the
+        # Content-Type would reject perfectly valid images. The real signature of
+        # the first bytes is checked instead, which is more reliable.
         written = 0
         head = b""
         with open(tmp_path, "wb") as f:
@@ -528,25 +528,25 @@ def download_image(photo: dict, cache_dir: str) -> str | None:
                 written += len(chunk)
 
         if written == 0:
-            logger.error(f"Téléchargement vide pour la photo {filename}")
+            logger.error(f"Empty download for photo {filename}")
             return None
 
         if not _looks_like_image(head):
             logger.error(
-                f"Contenu non reconnu comme une image pour la photo {filename} "
-                f"(premiers octets: {head[:4].hex()}, {written} octets)"
+                f"Content not recognised as an image for photo {filename} "
+                f"(first bytes: {head[:4].hex()}, {written} bytes)"
             )
             return None
 
         os.replace(tmp_path, local_path)
-        logger.debug(f"  → Sauvegardé: {local_path} ({written} octets)")
+        logger.debug(f"  -> Saved: {local_path} ({written} bytes)")
         return local_path
 
     except requests.RequestException as e:
-        logger.error(f"Erreur téléchargement iCloud {filename}: {e}")
+        logger.error(f"iCloud download error {filename}: {e}")
         return None
     except OSError as e:
-        logger.error(f"Erreur d'écriture du cache {local_path}: {e}")
+        logger.error(f"Error writing the cache {local_path}: {e}")
         return None
     finally:
         if os.path.exists(tmp_path):

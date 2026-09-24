@@ -5,8 +5,8 @@ on:
     branches: [main]
   pull_request:
   schedule:
-    # Les deux validateurs evoluent : un passage hebdomadaire signale les
-    # ruptures sans attendre un commit.
+    # Both validators keep evolving: a weekly run surfaces breakage without
+    # waiting for the next commit.
     - cron: "0 6 * * 1"
   workflow_dispatch:
 
@@ -26,10 +26,10 @@ jobs:
       - uses: hacs/action@main
         with:
           category: integration
-          # Le controle "brands" exige que le domaine soit enregistre dans le
-          # depot home-assistant/brands, ce qui n'a de sens que pour une
-          # integration publiee dans HACS par defaut. Il echoue sur toute
-          # integration personnalisee.
+          # The "brands" check requires the domain to be registered in the
+          # home-assistant/brands repository, which only applies to
+          # integrations shipped in the HACS default catalogue. It fails on
+          # every custom integration.
           ignore: brands
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -43,9 +43,9 @@ jobs:
         with:
           python-version: "3.13"
       - run: pip install pyflakes
-      - name: Noms indefinis et imports inutilises
+      - name: Undefined names and unused imports
         run: pyflakes custom_components/samsung_frame/*.py custom_components/samsung_frame/sources/*.py
-      - name: JSON valide et traductions alignees
+      - name: Valid JSON and aligned translations
         run: |
           python - <<'PY'
           import json, pathlib, sys
@@ -60,20 +60,20 @@ jobs:
                    for n in ("strings.json", "translations/en.json", "translations/fr.json")}
           problems = []
           if files["strings.json"] != files["translations/en.json"]:
-              problems.append("translations/en.json doit etre une copie de strings.json")
+              problems.append("translations/en.json must be a copy of strings.json")
           keys = {n: set(flat(d)) for n, d in files.items()}
           for n in ("translations/fr.json",):
               missing = keys["strings.json"] - keys[n]
               extra = keys[n] - keys["strings.json"]
-              if missing: problems.append(f"{n}: cles manquantes {sorted(missing)}")
-              if extra: problems.append(f"{n}: cles en trop {sorted(extra)}")
-          # Un chevron litteral casse l'analyseur ICU du frontend (UNCLOSED_TAG)
+              if missing: problems.append(f"{n}: missing keys {sorted(missing)}")
+              if extra: problems.append(f"{n}: unexpected keys {sorted(extra)}")
+          # A literal angle bracket breaks the frontend ICU parser (UNCLOSED_TAG)
           for n, d in files.items():
               for k, v in flat(d).items():
                   if isinstance(v, str) and ("<" in v or ">" in v):
-                      problems.append(f"{n}:{k} contient un chevron")
+                      problems.append(f"{n}:{k} contains an angle bracket")
                   if isinstance(v, str) and v.count("{") != v.count("}"):
-                      problems.append(f"{n}:{k} a des accolades desequilibrees")
-          print("\n".join(problems) or "traductions OK")
+                      problems.append(f"{n}:{k} has unbalanced braces")
+          print("\n".join(problems) or "translations OK")
           sys.exit(1 if problems else 0)
           PY

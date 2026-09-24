@@ -1,6 +1,6 @@
 """
-Source : theframetv.com
-Scrape et télécharge des artworks gratuits optimisés pour Samsung The Frame.
+Source: theframetv.com
+Scrapes and downloads free artworks optimised for Samsung The Frame.
 """
 from __future__ import annotations
 
@@ -21,20 +21,21 @@ HEADERS = {
     "User-Agent": "Mozilla/5.0 (compatible; FrameUpdater/1.0)"
 }
 
-# Le catalogue tient sur une vingtaine de pages de 15 oeuvres. La boucle de
-# scraping s'arrete d'elle-meme des qu'une page ne renvoie plus rien, donc cette
-# borne n'est qu'un garde-fou : elle doit rester largement au-dessus du nombre
-# reel de pages, sans quoi on ne recupere que la tete de liste. Avec une borne
-# trop basse (5 auparavant) l'index se limitait aux 75 oeuvres les plus
-# recentes, toutes issues du meme lot saisonnier.
+# The catalogue spans about twenty pages of 15 artworks. The scraping loop stops
+# by itself as soon as a page returns nothing, so this bound is only a
+# safeguard: it must stay well above the real page count, otherwise only the
+# head of the list is collected. With a bound that was too low (5 previously)
+# the index was limited to the 75 most recent artworks, all from the same
+# seasonal batch.
 DEFAULT_MAX_PAGES = 40
 
-# Sélecteurs des cartes d'artwork sur la grille /arts/ (thème WordPress Raven/Elementor).
-# Vérifiés sur le HTML réel : <div class="raven-grid-item raven-post-item ...">
-#   <div class="raven-post"><div class="raven-post-image-wrap">
-#     <a class="raven-post-image" href="..."><img src="...-806x454.jpg" alt="..."></a>
-# Les sélecteurs suivants sont essayés dans l'ordre, le premier qui remonte
-# quelque chose gagne. Les suivants sont des filets de sécurité si le thème change.
+# Selectors for the artwork cards on the /arts/ grid (Raven/Elementor WordPress
+# theme). Verified against the real HTML:
+#   <div class="raven-grid-item raven-post-item ...">
+#     <div class="raven-post"><div class="raven-post-image-wrap">
+#       <a class="raven-post-image" href="..."><img src="...-806x454.jpg" alt="..."></a>
+# The selectors below are tried in order and the first one that returns
+# something wins. The later ones are safety nets in case the theme changes.
 ITEM_SELECTORS = (
     "div.raven-grid-item, div.raven-post-item",
     "div.raven-post",
@@ -43,21 +44,21 @@ ITEM_SELECTORS = (
     "a[href*='/arts/download-free']",
 )
 
-# Images d'habillage du site à ne jamais confondre avec un artwork.
+# Site chrome images that must never be mistaken for an artwork.
 _IGNORED_IMAGE_PATTERNS = ("the-frame-logo", "unsplash_logo", "biy-me-coffe", "logo")
 
 _SIZE_SUFFIX_RE = re.compile(r'-\d+x\d+(\.\w+)$')
 
 
 def _thumb_to_fullres(thumb_url: str) -> str:
-    """Convertit une URL thumbnail en URL full-res en supprimant le suffixe de dimensions."""
+    """Turn a thumbnail URL into a full-res one by stripping the size suffix."""
     return _SIZE_SUFFIX_RE.sub(r'\1', thumb_url)
 
 
 def _best_from_srcset(srcset: str) -> str:
     """
-    Retourne l'URL de plus grande résolution déclarée dans un attribut ``srcset``.
-    Retourne une chaîne vide si le srcset est vide ou illisible.
+    Return the highest-resolution URL declared in a ``srcset`` attribute.
+    Returns an empty string when the srcset is empty or unreadable.
     """
     best_url = ""
     best_width = -1
@@ -77,7 +78,7 @@ def _best_from_srcset(srcset: str) -> str:
                 if descriptor.endswith("w"):
                     width = int(float(descriptor[:-1]))
                 elif descriptor.endswith("x"):
-                    # densité : on la convertit en pseudo-largeur pour comparer
+                    # density: converted to a pseudo-width so it can be compared
                     width = int(float(descriptor[:-1]) * 1000)
             except ValueError:
                 width = 0
@@ -91,8 +92,8 @@ def _best_from_srcset(srcset: str) -> str:
 
 def _img_url(img) -> str:
     """
-    Extrait l'URL la plus grande disponible d'une balise <img>.
-    Gère le lazy-loading WordPress (``data-lazy-src`` / ``data-src``) et les ``srcset``.
+    Extract the largest URL available from an <img> tag.
+    Handles WordPress lazy-loading (``data-lazy-src`` / ``data-src``) and ``srcset``.
     """
     if img is None:
         return ""
@@ -113,7 +114,7 @@ def _img_url(img) -> str:
 
 
 def _is_artwork_url(url: str) -> bool:
-    """Vrai si l'URL ressemble à une image d'artwork et non à un logo du site."""
+    """True when the URL looks like an artwork image rather than a site logo."""
     if not url or "wp-content/uploads" not in url:
         return False
     lowered = url.lower()
@@ -123,7 +124,7 @@ def _is_artwork_url(url: str) -> bool:
 
 
 def _absolute(url: str) -> str:
-    """Rend une URL absolue par rapport à theframetv.com."""
+    """Make a URL absolute relative to theframetv.com."""
     if not url:
         return ""
     if url.startswith("//"):
@@ -134,19 +135,19 @@ def _absolute(url: str) -> str:
 
 
 def _name_from_page_url(page_url: str) -> str:
-    """Dérive un nom lisible depuis le slug de la page de l'artwork."""
+    """Derive a readable name from the slug of the artwork page."""
     slug = page_url.rstrip("/").split("/")[-1]
     slug = re.sub(r'^download-free-samsung-(4k-)?frame-tv-arts?-', '', slug)
     return slug.replace("-", " ").strip().title() or "Artwork"
 
 
 def _parse_items(soup: BeautifulSoup) -> list[dict]:
-    """Extrait les artworks d'une page de grille, en essayant les sélecteurs connus."""
+    """Extract the artworks of a grid page, trying the known selectors in turn."""
     items = []
     for selector in ITEM_SELECTORS:
         items = soup.select(selector)
         if items:
-            logger.debug(f"Sélecteur retenu: {selector} ({len(items)} éléments)")
+            logger.debug(f"Selector used: {selector} ({len(items)} elements)")
             break
 
     artworks: list[dict] = []
@@ -196,8 +197,8 @@ def _parse_items(soup: BeautifulSoup) -> list[dict]:
 
 def fetch_artwork_list(max_pages: int = DEFAULT_MAX_PAGES) -> list[dict]:
     """
-    Scrape theframetv.com/arts/ et retourne la liste des artworks disponibles.
-    Retourne une liste de dicts: [{name, thumb_url, full_url, page_url}]
+    Scrape theframetv.com/arts/ and return the list of available artworks.
+    Returns a list of dicts: [{name, thumb_url, full_url, page_url}]
     """
     artworks: list[dict] = []
     known_pages: set[str] = set()
@@ -210,11 +211,11 @@ def fetch_artwork_list(max_pages: int = DEFAULT_MAX_PAGES) -> list[dict]:
         try:
             resp = requests.get(url, headers=HEADERS, timeout=10)
             if resp.status_code == 404:
-                logger.debug(f"Page {page} inexistante (404), fin de la pagination")
+                logger.debug(f"Page {page} does not exist (404), end of pagination")
                 break
             resp.raise_for_status()
         except requests.RequestException as e:
-            logger.warning(f"Erreur scraping page {page}: {e}")
+            logger.warning(f"Error scraping page {page}: {e}")
             break
 
         soup = BeautifulSoup(resp.text, "html.parser")
@@ -230,11 +231,11 @@ def fetch_artwork_list(max_pages: int = DEFAULT_MAX_PAGES) -> list[dict]:
             if not artwork["full_url"]:
                 without_image += 1
 
-        logger.info(f"  → {found} artworks trouvés sur la page {page}")
+        logger.info(f"  -> {found} artworks found on page {page}")
         if without_image:
             logger.warning(
-                f"  → {without_image} artworks sans URL d'image sur la page {page} "
-                "(le fallback par page individuelle sera utilisé)"
+                f"  -> {without_image} artworks without an image URL on page {page} "
+                "(the per-page fallback will be used)"
             )
 
         if found == 0:
@@ -242,19 +243,19 @@ def fetch_artwork_list(max_pages: int = DEFAULT_MAX_PAGES) -> list[dict]:
 
         page += 1
 
-    logger.info(f"Total artworks theframetv.com: {len(artworks)}")
+    logger.info(f"Total artworks on theframetv.com: {len(artworks)}")
     return artworks
 
 
 def _get_fullres_from_page(page_url: str) -> str | None:
-    """Récupère l'URL full-res depuis la page individuelle — strip le suffixe de taille."""
+    """Fetch the full-res URL from the individual page, stripping the size suffix."""
     try:
         resp = requests.get(page_url, headers=HEADERS, timeout=10)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
 
-        # L'image principale de l'artwork porte la classe wp-post-image
-        # (widget JetEngine "jet-listing-dynamic-image").
+        # The main artwork image carries the wp-post-image class
+        # (JetEngine "jet-listing-dynamic-image" widget).
         candidates = soup.select(
             "img.wp-post-image, img.jet-listing-dynamic-image__img"
         ) or soup.find_all("img")
@@ -264,7 +265,7 @@ def _get_fullres_from_page(page_url: str) -> str | None:
             if _is_artwork_url(src):
                 return _thumb_to_fullres(src)
 
-        # Dernier recours : l'image mise en avant déclarée dans les métadonnées Open Graph.
+        # Last resort: the featured image declared in the Open Graph metadata.
         og = soup.select_one("meta[property='og:image']")
         if og:
             src = _absolute((og.get("content") or "").strip())
@@ -272,15 +273,15 @@ def _get_fullres_from_page(page_url: str) -> str | None:
                 return _thumb_to_fullres(src)
 
     except Exception as e:
-        logger.warning(f"Impossible de récupérer full-res depuis {page_url}: {e}")
+        logger.warning(f"Could not fetch the full-res image from {page_url}: {e}")
 
     return None
 
 
 def load_index(index_file: str) -> list[dict]:
     """
-    Charge l'index local des artworks depuis index_file.
-    Retourne une liste vide si le fichier est absent, illisible ou corrompu.
+    Load the local artwork index from index_file.
+    Returns an empty list when the file is missing, unreadable or corrupt.
     """
     if not os.path.exists(index_file):
         return []
@@ -289,11 +290,11 @@ def load_index(index_file: str) -> list[dict]:
         with open(index_file, "r", encoding="utf-8") as f:
             data = json.load(f)
     except (json.JSONDecodeError, OSError, UnicodeDecodeError) as e:
-        logger.error(f"Index illisible ou corrompu ({index_file}): {e}")
+        logger.error(f"Index unreadable or corrupt ({index_file}): {e}")
         return []
 
     if not isinstance(data, list):
-        logger.error(f"Index au format inattendu ({index_file}): liste attendue")
+        logger.error(f"Unexpected index format ({index_file}): a list was expected")
         return []
 
     return data
@@ -301,8 +302,8 @@ def load_index(index_file: str) -> list[dict]:
 
 def save_index(artworks: list[dict], index_file: str) -> None:
     """
-    Sauvegarde l'index local dans index_file de façon atomique
-    (écriture dans un fichier temporaire puis os.replace).
+    Save the local index to index_file atomically
+    (write to a temporary file, then os.replace).
     """
     directory = os.path.dirname(index_file)
     if directory:
@@ -316,7 +317,7 @@ def save_index(artworks: list[dict], index_file: str) -> None:
             os.fsync(f.fileno())
         os.replace(tmp_file, index_file)
     except OSError as e:
-        logger.error(f"Erreur d'écriture de l'index {index_file}: {e}")
+        logger.error(f"Error writing the index {index_file}: {e}")
         try:
             if os.path.exists(tmp_file):
                 os.remove(tmp_file)
@@ -327,8 +328,8 @@ def save_index(artworks: list[dict], index_file: str) -> None:
 
 def index_age_days(index_file: str) -> float | None:
     """
-    Retourne l'âge de l'index en jours (basé sur la date de modification du fichier),
-    ou None si le fichier n'existe pas / est inaccessible.
+    Return the age of the index in days (based on the file modification time),
+    or None when the file does not exist or is not accessible.
     """
     try:
         mtime = os.path.getmtime(index_file)
@@ -340,19 +341,19 @@ def index_age_days(index_file: str) -> float | None:
 
 def refresh_index(index_file: str, max_pages: int = DEFAULT_MAX_PAGES) -> list[dict]:
     """
-    Rafraîchit l'index en scrapant le site et le sauvegarde dans index_file.
+    Refresh the index by scraping the site and save it to index_file.
 
-    Protection : si le scraping ne retourne aucun artwork alors que l'index existant
-    en contient, l'ancien index est conservé (un scraping raté ne doit pas vider
-    le catalogue).
+    Safeguard: when scraping returns no artwork at all while the existing index
+    holds some, the old index is kept (a failed scrape must not wipe the
+    catalogue).
     """
     artworks = fetch_artwork_list(max_pages=max_pages)
     existing = load_index(index_file)
 
     if not artworks and existing:
         logger.error(
-            f"Scraping theframetv.com sans résultat : conservation de l'index "
-            f"existant ({len(existing)} artworks)"
+            f"Scraping theframetv.com returned nothing: keeping the existing "
+            f"index ({len(existing)} artworks)"
         )
         return existing
 
@@ -362,43 +363,43 @@ def refresh_index(index_file: str, max_pages: int = DEFAULT_MAX_PAGES) -> list[d
 
 def download_image(artwork: dict, cache_dir: str) -> str | None:
     """
-    Télécharge l'image full-res d'un artwork dans le cache local.
-    Le téléchargement se fait dans un fichier .part renommé à la fin,
-    afin de ne jamais laisser un JPEG tronqué dans le cache.
-    Retourne le chemin local du fichier, ou None en cas d'échec.
+    Download the full-res image of an artwork into the local cache.
+    The download goes to a .part file that is renamed at the end, so a truncated
+    JPEG is never left in the cache.
+    Returns the local path of the file, or None on failure.
     """
     os.makedirs(cache_dir, exist_ok=True)
 
-    # Nom de fichier basé sur le slug de la page
+    # File name based on the page slug
     slug = artwork["page_url"].rstrip("/").split("/")[-1]
     local_path = os.path.join(cache_dir, f"{slug}.jpg")
 
     if os.path.exists(local_path):
-        logger.debug(f"Déjà en cache: {local_path}")
+        logger.debug(f"Already cached: {local_path}")
         return local_path
 
-    # Essayer l'URL full-res directe
+    # Try the direct full-res URL
     full_url = artwork.get("full_url", "")
 
-    # Si pas d'URL full-res ou que c'est encore un thumbnail, récupérer depuis la page
+    # No full-res URL, or still a thumbnail: fetch it from the page instead
     if not full_url or re.search(r'-\d+x\d+\.\w+$', full_url):
         full_url = _get_fullres_from_page(artwork["page_url"]) or full_url
 
     if not full_url:
-        logger.warning(f"Pas d'URL full-res pour: {artwork['name']}")
+        logger.warning(f"No full-res URL for: {artwork['name']}")
         return None
 
     tmp_path = f"{local_path}.part"
 
     try:
-        logger.info(f"Téléchargement: {artwork['name']}")
+        logger.info(f"Downloading: {artwork['name']}")
         resp = requests.get(full_url, headers=HEADERS, timeout=30, stream=True)
         resp.raise_for_status()
 
         content_type = (resp.headers.get("Content-Type") or "").lower()
         if content_type and not content_type.startswith("image/"):
             logger.error(
-                f"Contenu non-image ({content_type or 'inconnu'}) pour {full_url}"
+                f"Non-image content ({content_type or 'unknown'}) for {full_url}"
             )
             return None
 
@@ -410,18 +411,18 @@ def download_image(artwork: dict, cache_dir: str) -> str | None:
                     written += len(chunk)
 
         if written == 0:
-            logger.error(f"Téléchargement vide pour {full_url}")
+            logger.error(f"Empty download for {full_url}")
             return None
 
         os.replace(tmp_path, local_path)
-        logger.info(f"  → Sauvegardé: {local_path} ({written} octets)")
+        logger.info(f"  -> Saved: {local_path} ({written} bytes)")
         return local_path
 
     except requests.RequestException as e:
-        logger.error(f"Erreur téléchargement {full_url}: {e}")
+        logger.error(f"Download error {full_url}: {e}")
         return None
     except OSError as e:
-        logger.error(f"Erreur d'écriture du cache {local_path}: {e}")
+        logger.error(f"Error writing the cache {local_path}: {e}")
         return None
     finally:
         if os.path.exists(tmp_path):

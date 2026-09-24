@@ -2,166 +2,161 @@
 
 [![Validation](https://github.com/pvignau/ha-samsung-frame-artwork/actions/workflows/validate.yml/badge.svg)](https://github.com/pvignau/ha-samsung-frame-artwork/actions/workflows/validate.yml)
 [![hacs](https://img.shields.io/badge/HACS-custom-41BDF5.svg)](https://hacs.xyz)
-[![licence](https://img.shields.io/badge/licence-MIT-green.svg)](LICENSE)
+[![license](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-Intégration Home Assistant qui fait tourner automatiquement les œuvres affichées
-en mode Art sur une TV **Samsung The Frame**.
+Home Assistant integration that automatically rotates the artwork displayed in
+Art Mode on a **Samsung The Frame** TV.
 
-## Fonctionnement
+## How it works
 
-À intervalle configurable (6 h par défaut), l'intégration tire une source au sort
-(pondération réglable), télécharge une image, la recadre en 3840×2160 JPEG
-(≤ 1,9 Mo, limite de la TV) et l'envoie à la TV via
+On a configurable interval (6 h by default), the integration picks a source at
+random (weights are adjustable), downloads an image, crops it to a 3840×2160
+JPEG (≤ 1.9 MB, the TV limit) and sends it to the TV through
 [`samsungtvws`](https://github.com/NickWaterton/samsung-tv-ws-api).
 
 ### Sources
 
 | Source | Description |
 |---|---|
-| **theframetv.com** | Catalogue d'œuvres gratuites 4K, scrapé et mis en cache localement |
-| **Album partagé iCloud** | Photos d'un album iCloud public (lien `https://photos.icloud.com/shared/album/…`) |
+| **theframetv.com** | Catalogue of free 4K artworks, scraped and cached locally |
+| **iCloud shared album** | Photos from a public iCloud album (`https://photos.icloud.com/shared/album/…`) |
 
-#### Albums iCloud : deux générations d'API
+A persistent history prevents the same artworks from coming back until the
+catalogue has been cycled through.
 
-Apple a migré les albums partagés vers **CloudKit**. L'intégration gère les deux :
+#### iCloud albums: two generations of API
 
-1. **CloudKit** (liens récents) — `records/resolve` fournit un jeton d'accès
-   anonyme, la partition et la zone de l'album ; `changes/zone` énumère ensuite
-   les photos avec leurs URL signées.
-2. **`sharedstreams`** (anciens albums) — conservé en repli automatique.
+Apple migrated shared albums to **CloudKit**. The integration handles both:
 
-Quand l'original est en HEIC, que Pillow ne lit pas sans greffon, la dérivée
-JPEG générée par Apple est utilisée à la place.
+1. **CloudKit** (recent links) — `records/resolve` returns an anonymous access
+   token, the partition and the album zone; `changes/zone` then enumerates the
+   photos with their signed URLs.
+2. **`sharedstreams`** (older albums) — kept as an automatic fallback.
 
-Ces API ne sont pas documentées : elles ont été reconstituées par observation du
-client web d'Apple et peuvent changer sans préavis. En cas de panne, le journal
-indique l'étape qui échoue.
+When the original is a HEIC, which Pillow cannot read without a plugin, Apple's
+own JPEG derivative is used instead.
 
-Un historique persistant évite de réafficher les mêmes œuvres tant que le
-catalogue n'a pas été parcouru.
+## Entities and services
 
-## Entités et services
-
-- `sensor.<tv>_current_artwork` — œuvre actuellement affichée (attributs : source, date, chemin local)
-- `button.<tv>_update_artwork_now` — force un changement immédiat
-- Service `samsung_frame.update_artwork` — idem, depuis une automatisation
-- Service `samsung_frame.refresh_theframetv_index` — force un re-scraping du catalogue
+- `sensor.<tv>_current_artwork` — artwork currently displayed (attributes:
+  source, date, local path)
+- `button.<tv>_update_artwork_now` — push a new artwork right now
+- Service `samsung_frame.update_artwork` — same, from an automation
+- Service `samsung_frame.refresh_theframetv_index` — force a catalogue re-scrape
 
 ## Options
 
-| Option | Défaut | Rôle |
+| Option | Default | Purpose |
 |---|---|---|
-| `interval_hours` | 6 | Intervalle de rotation |
-| `history_size` | 20 | Anti-répétition |
-| `image_mode` | `fill` | `fill` = recadrage centré, `fit` = bandes noires, `smart` = recadrage sur les visages |
+| `interval_hours` | 6 | Rotation interval |
+| `history_size` | 20 | Anti-repeat history |
+| `skip_when_watching` | enabled | **Do not interrupt viewing** (see below) |
+| `image_mode` | `fill` | `fill` = centre crop, `fit` = letterboxed, `smart` = crop on faces |
+| `image_width` / `image_height` | 3840 × 2160 | Target resolution |
+| `max_tv_images` | 10 | **Images kept in the TV memory** |
+| `cache_max_mb` | 300 | Maximum size of the local disk cache |
+| `index_refresh_days` | 7 | How often the catalogue is re-scraped |
 
-### Recadrage intelligent (`smart`)
+### Face-aware cropping (`smart`)
 
-Une photo de portrait recadrée en 16:9 perd le haut du crâne quand le cadre est
-centré. En mode `smart`, les visages sont détectés (cascades de Haar d'OpenCV)
-et le cadre est calé dessus, avec une marge et un léger décalage vers le haut
-conforme à la composition d'un portrait. S'il n'y a personne sur la photo — le
-cas courant des œuvres de theframetv.com — le comportement est identique à
-`fill`.
+A portrait photo cropped to 16:9 loses the top of the head when the window is
+centred. In `smart` mode, faces are detected (OpenCV Haar cascades) and the crop
+window is anchored on them, with padding and a slight upward offset matching how
+a portrait is normally composed. When nobody is on the photo — the common case
+for theframetv.com artworks — the result is identical to `fill`.
 
-La détection tourne sur une version réduite de l'image (800 px au plus grand
-côté), dans l'executor de Home Assistant. Elle nécessite
-`opencv-python-headless`, épinglé sur la branche 4.x : OpenCV 5 a retiré
-`CascadeClassifier` et les cascades. Si la bibliothèque est absente ou
-inutilisable, le recadrage retombe sur le centrage avec un avertissement dans le
-journal.
-| `image_width` / `image_height` | 3840 × 2160 | Résolution cible |
-| `max_tv_images` | 10 | **Images conservées dans la mémoire de la TV** |
-| `cache_max_mb` | 300 | Taille max du cache disque local |
-| `index_refresh_days` | 7 | Fréquence de re-scraping du catalogue |
-| `skip_when_watching` | activé | **Ne pas interrompre le visionnage** (voir ci-dessous) |
+Detection runs on a downscaled copy of the image (800 px on the longest side),
+inside the Home Assistant executor. It requires `opencv-python-headless`, pinned
+to the 4.x branch: OpenCV 5 removed `CascadeClassifier` and no longer ships the
+cascades. If the library is missing or unusable, cropping falls back to centred
+with a warning in the log.
 
-### Ne pas interrompre le visionnage
+### Do not interrupt viewing
 
-Pousser une œuvre bascule la TV en mode Art, ce qui coupe ce qui est en cours de
-lecture. Quand l'option est active, la rotation programmée vérifie d'abord l'état
-du mode Art : si la TV affiche du contenu, le cycle est ignoré — rien n'est
-téléchargé ni envoyé — et réessayé toutes les 15 minutes, de sorte que l'œuvre
-change peu après l'extinction.
+Pushing an artwork switches the TV into Art Mode, which cuts off whatever is
+playing. When this option is enabled, the scheduled rotation first checks the
+Art Mode state: if the TV is showing content, the cycle is skipped — nothing is
+downloaded or uploaded — and retried every 15 minutes, so the artwork changes
+shortly after the TV is switched off.
 
-C'est bien le mode Art qui sert de critère, et non l'alimentation : sur une
-Frame, `PowerState` vaut `on` aussi bien en mode Art qu'en cours de visionnage.
+Art Mode is the criterion, not the power state: on a Frame, `PowerState` reads
+`on` both in Art Mode and while content is playing.
 
-Le bouton **Update Artwork Now** pousse une image dans tous les cas (action
-manuelle explicite) ; le service `samsung_frame.update_artwork`, lui, respecte la
-protection, car il est surtout appelé depuis des automatisations.
+The **Update Artwork Now** button always pushes an image (an explicit manual
+action); the `samsung_frame.update_artwork` service honours the protection,
+since it is mostly called from automations.
 
 ## Installation
 
-### Via HACS (recommandé)
+### Through HACS (recommended)
 
-HACS → menu ⋮ → **Dépôts personnalisés** → ajouter
-`https://github.com/pvignau/ha-samsung-frame-artwork` en catégorie **Integration**,
-puis installer **Samsung Frame Artwork** et redémarrer Home Assistant.
+HACS → ⋮ menu → **Custom repositories** → add
+`https://github.com/pvignau/ha-samsung-frame-artwork` with category
+**Integration**, then install **Samsung Frame Artwork** and restart Home
+Assistant.
 
-### Manuellement
+### Manually
 
-Copier `custom_components/samsung_frame/` dans le dossier `config/` de Home
-Assistant, puis redémarrer.
+Copy `custom_components/samsung_frame/` into the Home Assistant `config/`
+folder, then restart.
 
 ### Configuration
 
-**Paramètres → Appareils et services → Ajouter une intégration → Samsung Frame
-Artwork**.
+**Settings → Devices & services → Add integration → Samsung Frame Artwork**.
 
-La TV doit être allumée (ou en mode Art) lors du premier appairage : elle affiche
-une demande d'autorisation à accepter avec la télécommande. Le jeton est ensuite
-conservé dans `.storage/samsung_frame_<entry_id>_tv_token`.
+The TV must be on (or in Art Mode) during the first pairing: it shows an
+authorisation prompt to accept with the remote. The token is then stored in
+`.storage/samsung_frame_<entry_id>_tv_token`.
 
-Au premier démarrage, Home Assistant installe les dépendances dans
-`config/deps`, dont `opencv-python-headless` (~45 Mo) : ce démarrage-là est
-nettement plus long que les suivants.
+On the first start, Home Assistant installs the dependencies into `config/deps`,
+including `opencv-python-headless` (~45 MB): that particular start is noticeably
+longer than the following ones.
 
-> **Pensez à réserver l'adresse IP de la TV dans votre DHCP.** Un changement
-> d'adresse coupe l'intégration silencieusement : les images continuent d'être
-> téléchargées, mais plus rien n'est envoyé.
+> **Reserve the IP address of the TV in your DHCP server.** An address change
+> breaks the integration silently: images keep being downloaded, but nothing is
+> sent any more.
 
-## Avertissement
+## Disclaimer
 
-theframetv.com est parcouru par scraping, et les API d'albums partagés iCloud
-(CloudKit comme `sharedstreams`) ne sont pas documentées : elles ont été
-reconstituées par observation du client web d'Apple. Ces deux sources peuvent
-cesser de fonctionner sans préavis. En cas de panne, le journal Home Assistant
-indique l'étape exacte qui échoue.
+theframetv.com is scraped, and the iCloud shared album APIs (CloudKit as well as
+`sharedstreams`) are undocumented: they were reconstructed by observing Apple's
+web client. Both sources may stop working without notice. When that happens, the
+Home Assistant log names the exact step that fails.
 
-## Notes de version
+## Release notes
 
 ### 1.3.0
 
-Mode de recadrage **`smart`** : les visages présents sur la photo sont détectés
-et le cadre est calé dessus, au lieu du recadrage centré qui décapite les
-portraits. Sans visage détecté, le résultat est identique à `fill`.
+**`smart`** crop mode: faces present on the photo are detected and the crop
+window is anchored on them, instead of the centred crop that beheads portraits.
+With no face detected, the result is identical to `fill`.
 
-Prise en charge des **albums partagés iCloud modernes**, qu'Apple a migrés de
-l'API `sharedstreams` vers CloudKit ; l'ancienne API reste en repli automatique.
-Les originaux en HEIC, illisibles par Pillow, passent par la dérivée JPEG.
+Support for **modern iCloud shared albums**, which Apple migrated from the
+`sharedstreams` API to CloudKit; the former API remains an automatic fallback.
+HEIC originals, unreadable by Pillow, go through the JPEG derivative.
 
-**Protection du visionnage** : la rotation programmée ne bascule plus la TV en
-mode Art pendant que vous regardez un contenu, et réessaie toutes les 15 minutes.
+**Viewing protection**: the scheduled rotation no longer switches the TV into
+Art Mode while you are watching something, and retries every 15 minutes.
 
 ### 1.2.0
 
-Correctif de la panne de fond : l'intégration **empilait les images dans la
-mémoire interne de la TV sans jamais les supprimer**, jusqu'à saturation — tous
-les envois échouaient alors silencieusement. Les anciennes images sont désormais
-purgées automatiquement (`max_tv_images`).
+Fix for the underlying outage: the integration **kept stacking images in the TV
+internal memory without ever deleting any**, until it filled up — every upload
+then failed silently. Old images are now purged automatically
+(`max_tv_images`).
 
-Également : rafraîchissement périodique du catalogue (il restait figé), purge LRU
-du cache disque, correction du scraper theframetv.com, correction du suivi de
-redirection de partition iCloud et d'une traversée de chemin via les noms de
-fichiers iCloud, bornage des dimensions d'image, `unique_id` sur la config entry,
-dépendance `samsungtvws` épinglée sur un commit, traductions FR.
+Also: periodic catalogue refresh (it was frozen), LRU purge of the disk cache,
+theframetv.com scraper fix, fix for the iCloud partition redirect handling and
+for a path traversal through iCloud file names, bounded image dimensions,
+`unique_id` on the config entry, `samsungtvws` dependency pinned to a commit,
+French translations.
 
-Le catalogue était également plafonné à 5 pages de scraping, soit les 75 œuvres
-les plus récentes — toutes issues du même lot saisonnier (77 % de Noël). La
-borne est portée à 40 pages (la boucle s'arrête d'elle-même sur la première page
-vide) : **333 œuvres** indexées, 21 % de Noël.
+The catalogue was also capped at 5 scraped pages, i.e. the 75 most recent
+artworks — all from the same seasonal batch (77 % Christmas). The bound is
+raised to 40 pages (the loop stops by itself on the first empty page):
+**333 artworks** indexed, 21 % Christmas.
 
 ### 1.1.0
 
-Version initiale : config flow, deux sources, rotation pondérée, historique persistant.
+Initial version: config flow, two sources, weighted rotation, persistent
+history.
