@@ -66,10 +66,17 @@ a portrait is normally composed. When nobody is on the photo — the common case
 for theframetv.com artworks — the result is identical to `fill`.
 
 Detection runs on a downscaled copy of the image (800 px on the longest side),
-inside the Home Assistant executor. It requires `opencv-python-headless`, pinned
-to the 4.x branch: OpenCV 5 removed `CascadeClassifier` and no longer ships the
-cascades. If the library is missing or unusable, cropping falls back to centred
-with a warning in the log.
+inside the Home Assistant executor.
+
+> **`smart` needs OpenCV, which cannot be installed on Home Assistant OS.**
+> `opencv-python-headless` publishes no musllinux wheel, and the Home Assistant
+> container is Alpine-based, so the install falls back to a source build that
+> fails. The library is therefore *not* declared as a requirement: on an
+> installation where it is unavailable, `smart` behaves exactly like `fill` and
+> logs a warning. On a glibc-based install (Home Assistant Container on Debian,
+> or Core in a virtualenv), `pip install "opencv-python-headless>=4.12,<5"` in
+> the Home Assistant environment enables it. The 4.x branch is required:
+> OpenCV 5 removed `CascadeClassifier` and no longer ships the cascades.
 
 ### Do not interrupt viewing
 
@@ -124,6 +131,13 @@ web client. Both sources may stop working without notice. When that happens, the
 Home Assistant log names the exact step that fails.
 
 ## Release notes
+
+### 1.3.1
+
+`opencv-python-headless` is no longer declared as a requirement: it has no
+musllinux wheel, so on Home Assistant OS the install failed and the whole
+integration would not load. Face detection is now strictly optional, and
+`smart` degrades to a centred crop when OpenCV is absent.
 
 ### 1.3.0
 
