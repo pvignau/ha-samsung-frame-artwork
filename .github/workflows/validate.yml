@@ -26,6 +26,13 @@ jobs:
       - uses: hacs/action@main
         with:
           category: integration
+          # Le controle "brands" exige que le domaine soit enregistre dans le
+          # depot home-assistant/brands, ce qui n'a de sens que pour une
+          # integration publiee dans HACS par defaut. Il echoue sur toute
+          # integration personnalisee.
+          ignore: brands
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   lint:
     name: Python
