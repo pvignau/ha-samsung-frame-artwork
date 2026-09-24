@@ -27,10 +27,13 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-# Expected shape: https://www.icloud.com/photos/<token> (a leading '#' in the
-# token and a trailing fragment are tolerated, as produced by the Photos app).
+# Apple hands out two shapes for a public shared album, both with the token in
+# the fragment: https://www.icloud.com/photos/#<token> (older) and
+# https://www.icloud.com/sharedalbum/#<token> (current). The '#' and a trailing
+# "#<album name>" are both optional. This must stay in sync with
+# sources.icloud.extract_token(), which does the actual parsing.
 ICLOUD_URL_RE = re.compile(
-    r"^https://(?:[A-Za-z0-9-]+\.)*icloud\.com/photos/#?[A-Za-z0-9_-]+",
+    r"^https://(?:[A-Za-z0-9-]+\.)*icloud\.com/(?:photos|sharedalbum)/#?[A-Za-z0-9_-]+",
     re.IGNORECASE,
 )
 

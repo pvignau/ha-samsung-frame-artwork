@@ -29,11 +29,27 @@ _PARTITIONS = tuple(range(1, 10))
 _MAX_REDIRECTS = 10
 
 
-def _extract_token(share_url: str) -> str | None:
-    """Extrait le token de partage depuis l'URL iCloud."""
-    # Format: https://www.icloud.com/photos/XXXXXXXX
-    match = re.search(r'/photos/([A-Za-z0-9_-]+)', share_url)
+# Deux formes de lien public, avec le token dans le fragment :
+#   https://www.icloud.com/photos/#B0abcdef          (ancienne)
+#   https://www.icloud.com/sharedalbum/#B0abcdef     (actuelle)
+# Le '#' est optionnel, et l'app Photos ajoute parfois le nom de l'album en
+# second fragment : .../#B0abcdef#Vacances. Le token s'arrete donc au premier
+# '#', '/' ou '?' rencontre. Doit rester coherent avec ICLOUD_URL_RE du
+# config_flow, qui valide la saisie de l'utilisateur.
+_TOKEN_RE = re.compile(
+    r"/(?:photos|sharedalbum)/#?([A-Za-z0-9_-]+)",
+    re.IGNORECASE,
+)
+
+
+def extract_token(share_url: str) -> str | None:
+    """Extrait le token de partage depuis l'URL iCloud, ou None si illisible."""
+    match = _TOKEN_RE.search((share_url or "").strip())
     return match.group(1) if match else None
+
+
+# Ancien nom, conserve pour compatibilite interne.
+_extract_token = extract_token
 
 
 def _safe_filename(filename: str, fallback: str) -> str:
