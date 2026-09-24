@@ -173,6 +173,7 @@ class SamsungFrameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
 
         # Fallback to the other source if primary fails
+        fallback_source = source
         if result is None:
             fallback = "icloud" if source == "theframetv" else "theframetv"
             enabled_key = CONF_ICLOUD_ENABLED if fallback == "icloud" else CONF_THEFRAMETV_ENABLED
@@ -182,11 +183,18 @@ class SamsungFrameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     self._get_image_sync,
                     cfg, fallback, tf_history, ic_history, index_file, tf_cache, ic_cache,
                 )
+                fallback_source = fallback
                 if result is not None:
                     source = fallback
 
         if result is None:
-            raise UpdateFailed("All artwork sources failed to produce an image")
+            tried = [source] if source == fallback_source else [source, fallback_source]
+            raise UpdateFailed(
+                "No image could be obtained from the enabled source(s): "
+                + ", ".join(t for t in tried if t)
+                + ". Check the Home Assistant log for the per-source reason "
+                  "(invalid iCloud link, empty album, or theframetv.com unreachable)."
+            )
 
         # Upload to the TV (native async)
         success = await uploader.upload_to_frame(

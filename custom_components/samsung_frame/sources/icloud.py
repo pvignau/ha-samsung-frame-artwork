@@ -24,9 +24,17 @@ HEADERS = {
     "Content-Type": "application/json",
 }
 
-# Partitions iCloud connues (p01 à p09) et garde-fou contre les redirections circulaires.
-_PARTITIONS = tuple(range(1, 10))
-_MAX_REDIRECTS = 10
+# La partition n'est pas a deviner : elle est encodee dans le token lui-meme,
+# sur ses caracteres d'index 1 et 2, en base62. Exemples verifies :
+#   B12GfnH8tC0ZuK -> "12" -> 1*62 + 2  = 64   -> p64-sharedstreams.icloud.com
+#   D2Av3xm1...    -> "2A" -> 2*62 + 10 = 134  -> p134-sharedstreams.icloud.com
+# Les partitions montent donc bien au-dela de p09.
+_BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+_DEFAULT_PARTITION = 1
+
+# Si la partition derivee est mauvaise, Apple repond 330 avec le bon hote dans
+# X-Apple-MMe-Host. Garde-fou contre une chaine de redirections circulaire.
+_MAX_REDIRECTS = 5
 
 
 # Trois formes de lien public selon l'epoque :
@@ -77,93 +85,102 @@ def _safe_filename(filename: str, fallback: str) -> str:
     return name
 
 
+def _partition_from_token(token: str) -> int:
+    """Derive le numero de partition encode dans le token (base62 des car. 1 et 2)."""
+    if len(token) < 3:
+        return _DEFAULT_PARTITION
+    value = 0
+    for char in token[1:3]:
+        index = _BASE62.find(char)
+        if index < 0:
+            logger.debug(f"Caractere non base62 dans le token: {char!r}")
+            return _DEFAULT_PARTITION
+        value = value * 62 + index
+    return value or _DEFAULT_PARTITION
+
+
+def _base_url(partition: int) -> str:
+    return ICLOUD_API_BASE.format(partition=partition)
+
+
+def _host_to_base_url(host: str) -> str | None:
+    """Convertit l'hote renvoye par une redirection 330 en URL de base."""
+    host = (host or "").strip().strip("/")
+    if host.startswith("http://") or host.startswith("https://"):
+        host = host.split("//", 1)[1]
+    if not re.fullmatch(r"p\d+-sharedstreams\.icloud\.com", host, re.IGNORECASE):
+        return None
+    return f"https://{host}"
+
+
 def fetch_album_metadata(share_url: str) -> dict | None:
     """
     Récupère les métadonnées de l'album partagé iCloud.
     Retourne un dict avec les infos de l'album ou None si erreur.
 
-    Apple répond parfois par un HTTP 330 indiquant la bonne partition : cette
-    redirection est suivie en priorité, avec un nombre de sauts borné et un suivi
-    des partitions déjà essayées pour éviter toute boucle infinie.
+    La partition est dérivée du token ; si elle est erronée, Apple répond par un
+    HTTP 330 contenant le bon hôte dans X-Apple-MMe-Host, qui est alors suivi.
     """
-    token = _extract_token(share_url)
+    token = extract_token(share_url)
     if not token:
         logger.error(f"URL iCloud invalide: {share_url}")
         return None
 
-    tried: set[int] = set()
-    redirects = 0
-    # File d'attente : la partition indiquée par une redirection passe devant.
-    queue: list[int] = list(_PARTITIONS)
+    base_url = _base_url(_partition_from_token(token))
+    logger.debug(f"Partition dérivée du token: {base_url}")
+    tried: set[str] = set()
 
-    while queue:
-        partition = queue.pop(0)
-        if partition in tried:
-            continue
-        tried.add(partition)
+    for _ in range(_MAX_REDIRECTS):
+        if base_url in tried:
+            logger.debug(f"Hôte déjà essayé, arrêt: {base_url}")
+            break
+        tried.add(base_url)
 
-        api_url = (
-            f"{ICLOUD_API_BASE.format(partition=str(partition).zfill(2))}"
-            f"/{token}/sharedstreams/webstream"
-        )
+        api_url = f"{base_url}/{token}/sharedstreams/webstream"
         try:
             resp = requests.post(
-                api_url,
-                headers=HEADERS,
-                json={"streamCtag": None},
-                timeout=10,
+                api_url, headers=HEADERS, json={"streamCtag": None}, timeout=10
             )
         except requests.RequestException as e:
-            logger.debug(f"Partition {partition} inaccessible: {e}")
-            continue
+            logger.warning(f"Album iCloud injoignable sur {base_url}: {e}")
+            return None
 
         if resp.status_code == 200:
-            logger.info(f"Album iCloud trouvé sur partition {partition}")
             try:
                 payload = resp.json()
             except ValueError as e:
-                logger.warning(f"Réponse iCloud illisible sur la partition {partition}: {e}")
-                continue
-            return {"token": token, "partition": partition, **payload}
+                logger.warning(f"Réponse iCloud illisible ({base_url}): {e}")
+                return None
+            logger.info(f"Album iCloud trouvé sur {base_url}")
+            return {"token": token, "base_url": base_url, **payload}
 
         if resp.status_code == 330:
-            # Redirection vers une autre partition
             try:
                 data = resp.json()
             except ValueError:
                 data = {}
-            raw = data.get("X-Apple-MMe-Redir-Partition") or resp.headers.get(
-                "X-Apple-MMe-Redir-Partition"
-            )
-            try:
-                target = int(str(raw).lstrip("p") or partition)
-            except (TypeError, ValueError):
-                logger.warning(f"Partition de redirection illisible: {raw!r}")
-                continue
-
-            redirects += 1
-            if redirects > _MAX_REDIRECTS:
-                logger.error("Trop de redirections iCloud, abandon")
-                break
-            if target in tried:
-                logger.debug(f"Redirection vers la partition {target} déjà essayée, ignorée")
-                continue
-
-            logger.info(f"Redirection vers partition {target}")
-            # La partition indiquée par Apple est essayée en priorité.
-            queue.insert(0, target)
+            host = data.get("X-Apple-MMe-Host") or resp.headers.get("X-Apple-MMe-Host")
+            target = _host_to_base_url(host) if host else None
+            if not target:
+                logger.warning(f"Redirection iCloud illisible: {host!r}")
+                return None
+            logger.info(f"Redirection iCloud vers {target}")
+            base_url = target
             continue
 
         if resp.status_code == 404:
-            logger.debug(f"Partition {partition}: album inconnu (404)")
-            continue
+            logger.error(
+                "Album iCloud introuvable (404) : le lien de partage est peut-être "
+                "expiré, ou le « Site Web public » n'est pas activé sur l'album."
+            )
+            return None
 
         logger.warning(
-            f"Statut HTTP inattendu {resp.status_code} sur la partition {partition} "
-            f"pour l'album iCloud"
+            f"Statut HTTP inattendu {resp.status_code} depuis {base_url} pour l'album iCloud"
         )
+        return None
 
-    logger.error(f"Impossible d'accéder à l'album iCloud: {share_url}")
+    logger.error(f"Impossible d'accéder à l'album iCloud après redirections: {share_url}")
     return None
 
 
@@ -177,7 +194,7 @@ def fetch_photo_list(share_url: str) -> list[dict]:
         return []
 
     token = meta["token"]
-    partition = meta["partition"]
+    base_url = meta["base_url"]
     photos_raw = meta.get("photos", [])
 
     if not photos_raw:
@@ -186,10 +203,7 @@ def fetch_photo_list(share_url: str) -> list[dict]:
 
     # Récupérer les URLs de téléchargement
     guids = [p["photoGuid"] for p in photos_raw]
-    api_url = (
-        f"{ICLOUD_API_BASE.format(partition=str(partition).zfill(2))}"
-        f"/{token}/sharedstreams/webasseturls"
-    )
+    api_url = f"{base_url}/{token}/sharedstreams/webasseturls"
 
     try:
         resp = requests.post(
