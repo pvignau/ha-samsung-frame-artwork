@@ -15,14 +15,14 @@ jobs:
     name: Home Assistant hassfest
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: home-assistant/actions/hassfest@master
 
   hacs:
     name: HACS
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: hacs/action@main
         with:
           category: integration
@@ -38,13 +38,31 @@ jobs:
     name: Python
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
       - run: pip install pyflakes
       - name: Undefined names and unused imports
         run: pyflakes custom_components/samsung_frame/*.py custom_components/samsung_frame/sources/*.py
+      - name: Manifest key order and requirement format
+        run: |
+          python - <<'PY'
+          import json, pathlib, sys
+          d = json.loads(pathlib.Path("custom_components/samsung_frame/manifest.json").read_text())
+          keys = list(d)
+          expected = ["domain", "name"] + sorted(k for k in d if k not in ("domain", "name"))
+          problems = []
+          if keys != expected:
+              problems.append(f"manifest keys must be {expected}, got {keys}")
+          # hassfest rejects a PEP 508 direct reference written with spaces
+          for req in d["requirements"]:
+              if " " in req:
+                  problems.append(f"requirement contains a space: {req}")
+          print("\n".join(problems) or "manifest OK")
+          sys.exit(1 if problems else 0)
+          PY
+
       - name: Valid JSON and aligned translations
         run: |
           python - <<'PY'
@@ -67,13 +85,19 @@ jobs:
               extra = keys[n] - keys["strings.json"]
               if missing: problems.append(f"{n}: missing keys {sorted(missing)}")
               if extra: problems.append(f"{n}: unexpected keys {sorted(extra)}")
-          # A literal angle bracket breaks the frontend ICU parser (UNCLOSED_TAG)
+          # A literal angle bracket breaks the frontend ICU parser (UNCLOSED_TAG),
+          # and hassfest rejects translation strings that contain a URL.
+          import re
           for n, d in files.items():
               for k, v in flat(d).items():
-                  if isinstance(v, str) and ("<" in v or ">" in v):
+                  if not isinstance(v, str):
+                      continue
+                  if "<" in v or ">" in v:
                       problems.append(f"{n}:{k} contains an angle bracket")
-                  if isinstance(v, str) and v.count("{") != v.count("}"):
+                  if v.count("{") != v.count("}"):
                       problems.append(f"{n}:{k} has unbalanced braces")
+                  if re.search(r"https?://", v, re.I):
+                      problems.append(f"{n}:{k} contains a URL")
           print("\n".join(problems) or "translations OK")
           sys.exit(1 if problems else 0)
           PY

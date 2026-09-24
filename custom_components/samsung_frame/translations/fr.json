@@ -37,7 +37,7 @@
           "theframetv_weight": "Part relative de theframetv.com dans le tirage aléatoire, par rapport aux autres sources activées.",
           "icloud_enabled": "Utiliser les photos d'un album partagé iCloud.",
           "icloud_weight": "Part relative de l'album iCloud dans le tirage aléatoire, par rapport aux autres sources activées.",
-          "icloud_share_url": "Lien public de l'album partagé, par exemple https://photos.icloud.com/shared/album/B0abc123 — les anciennes formes icloud.com/sharedalbum et icloud.com/photos fonctionnent aussi. Dans Photos : Album partagé, puis activer Site Web public.",
+          "icloud_share_url": "Lien public de l'album partagé. Dans l'app Photos : ouvrir l'album, activer « Site Web public », puis copier le lien proposé.",
           "interval_hours": "Délai entre deux changements d'œuvre, en heures.",
           "skip_when_watching": "Quand la TV est allumée sur du contenu, la rotation programmée est ignorée au lieu de forcer le mode Art, puis réessayée toutes les 15 minutes. Le bouton « Update Artwork Now » pousse une image dans tous les cas.",
           "history_size": "Nombre d'œuvres récemment affichées mémorisées, afin de ne pas les retirer au sort trop tôt.",
@@ -53,7 +53,7 @@
     "error": {
       "cannot_connect": "Impossible de joindre la TV à cette adresse et sur ce port. Vérifiez qu'elle est allumée, connectée au réseau, et que l'IP et le port sont corrects.",
       "icloud_url_required": "Une URL d'album partagé iCloud est obligatoire lorsque la source iCloud est activée.",
-      "icloud_url_invalid": "Cette URL ne ressemble pas à un lien d'album partagé iCloud. Forme attendue : https://photos.icloud.com/shared/album/B0abc123",
+      "icloud_url_invalid": "Ce lien ne ressemble pas à un lien d'album partagé iCloud. Ouvrez l'album dans l'app Photos, activez « Site Web public », puis copiez le lien proposé.",
       "no_source_enabled": "Au moins une source doit être activée : theframetv.com, l'album iCloud, ou les deux."
     },
     "abort": {
@@ -86,7 +86,7 @@
           "theframetv_weight": "Part relative de theframetv.com dans le tirage aléatoire, par rapport aux autres sources activées.",
           "icloud_enabled": "Utiliser les photos d'un album partagé iCloud.",
           "icloud_weight": "Part relative de l'album iCloud dans le tirage aléatoire, par rapport aux autres sources activées.",
-          "icloud_share_url": "Lien public de l'album partagé, par exemple https://photos.icloud.com/shared/album/B0abc123 — les anciennes formes icloud.com/sharedalbum et icloud.com/photos fonctionnent aussi. Dans Photos : Album partagé, puis activer Site Web public.",
+          "icloud_share_url": "Lien public de l'album partagé. Dans l'app Photos : ouvrir l'album, activer « Site Web public », puis copier le lien proposé.",
           "interval_hours": "Délai entre deux changements d'œuvre, en heures.",
           "skip_when_watching": "Quand la TV est allumée sur du contenu, la rotation programmée est ignorée au lieu de forcer le mode Art, puis réessayée toutes les 15 minutes. Le bouton « Update Artwork Now » pousse une image dans tous les cas.",
           "history_size": "Nombre d'œuvres récemment affichées mémorisées, afin de ne pas les retirer au sort trop tôt.",
@@ -102,7 +102,7 @@
     "error": {
       "cannot_connect": "Impossible de joindre la TV à cette adresse et sur ce port. Vérifiez qu'elle est allumée, connectée au réseau, et que l'IP et le port sont corrects.",
       "icloud_url_required": "Une URL d'album partagé iCloud est obligatoire lorsque la source iCloud est activée.",
-      "icloud_url_invalid": "Cette URL ne ressemble pas à un lien d'album partagé iCloud. Forme attendue : https://photos.icloud.com/shared/album/B0abc123",
+      "icloud_url_invalid": "Ce lien ne ressemble pas à un lien d'album partagé iCloud. Ouvrez l'album dans l'app Photos, activez « Site Web public », puis copiez le lien proposé.",
       "no_source_enabled": "Au moins une source doit être activée : theframetv.com, l'album iCloud, ou les deux."
     }
   },
