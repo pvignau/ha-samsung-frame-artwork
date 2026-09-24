@@ -51,32 +51,43 @@ own JPEG derivative is used instead.
 | `interval_hours` | 6 | Rotation interval |
 | `history_size` | 20 | Anti-repeat history |
 | `skip_when_watching` | enabled | **Do not interrupt viewing** (see below) |
-| `image_mode` | `fill` | `fill` = centre crop, `fit` = letterboxed, `smart` = crop on faces |
+| `image_mode` | `fill` | `fill` = centre crop, `fit` = letterboxed, `smart` = crop on the subject |
 | `image_width` / `image_height` | 3840 × 2160 | Target resolution |
 | `max_tv_images` | 10 | **Images kept in the TV memory** |
 | `cache_max_mb` | 300 | Maximum size of the local disk cache |
 | `index_refresh_days` | 7 | How often the catalogue is re-scraped |
 
-### Face-aware cropping (`smart`)
+### Subject-aware cropping (`smart`)
 
 A portrait photo cropped to 16:9 loses the top of the head when the window is
-centred. In `smart` mode, faces are detected (OpenCV Haar cascades) and the crop
-window is anchored on them, with padding and a slight upward offset matching how
-a portrait is normally composed. When nobody is on the photo — the common case
-for theframetv.com artworks — the result is identical to `fill`.
+centred. `smart` places the crop window on the subject instead, in two stages:
 
-Detection runs on a downscaled copy of the image (800 px on the longest side),
-inside the Home Assistant executor.
+1. **Faces**, when OpenCV is available: the window is anchored on the detected
+   faces, with padding and a slight upward offset matching how a portrait is
+   normally composed.
+2. **Busiest area** otherwise, computed with numpy alone. Cropping to a ratio
+   leaves a single axis free, so this is a one-dimensional search: edge energy
+   is summed per row (or per column) and the best sliding window wins, with a
+   mild pull towards the centre. On a flat image, with no signal to go on, the
+   crop stays centred.
 
-> **`smart` needs OpenCV, which cannot be installed on Home Assistant OS.**
+On a portrait photo the two stages agree closely, since the face is also the
+busiest area: 285 px versus 318 px of offset on the test image, where a centred
+crop cut everything above the mouth.
+
+Both stages run on a downscaled copy of the image, inside the Home Assistant
+executor, and take a few milliseconds. Neither can make an upload fail: any
+error falls back to a centred crop with a line in the log.
+
+> **Face detection is optional and absent on Home Assistant OS.**
 > `opencv-python-headless` publishes no musllinux wheel, and the Home Assistant
 > container is Alpine-based, so the install falls back to a source build that
-> fails. The library is therefore *not* declared as a requirement: on an
-> installation where it is unavailable, `smart` behaves exactly like `fill` and
-> logs a warning. On a glibc-based install (Home Assistant Container on Debian,
-> or Core in a virtualenv), `pip install "opencv-python-headless>=4.12,<5"` in
-> the Home Assistant environment enables it. The 4.x branch is required:
-> OpenCV 5 removed `CascadeClassifier` and no longer ships the cascades.
+> fails. It is therefore *not* declared as a requirement, and `smart` uses the
+> busiest-area stage there. On a glibc-based install (Home Assistant Container
+> on Debian, or Core in a virtualenv), `pip install
+> "opencv-python-headless>=4.12,<5"` in the Home Assistant environment enables
+> the face stage. The 4.x branch is required: OpenCV 5 removed
+> `CascadeClassifier` and no longer ships the cascades.
 
 ### Do not interrupt viewing
 
@@ -127,6 +138,13 @@ web client. Both sources may stop working without notice. When that happens, the
 Home Assistant log names the exact step that fails.
 
 ## Release notes
+
+### 1.4.0
+
+`smart` no longer depends on OpenCV being present. When face detection is
+unavailable — which is the case on Home Assistant OS — the crop window is
+placed on the busiest area of the image, computed with numpy alone. Faces still
+take priority wherever OpenCV can be installed.
 
 ### 1.3.1
 

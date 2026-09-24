@@ -34,6 +34,15 @@ _FACE_HORIZONTAL_ANCHOR = 0.5
 # does not hug foreheads and chins.
 _FACE_PADDING = 0.35
 
+# Saliency fallback, used by "smart" when face detection is unavailable (OpenCV
+# ships no musllinux wheel, so it cannot be installed on Home Assistant OS).
+# The energy map is computed on a small copy; 512 px is ample for choosing a
+# crop offset and keeps the whole pass in the millisecond range.
+_SALIENCY_MAX_DIM = 512
+# Pure "most detailed area" can drift to a corner texture. A mild pull towards
+# the centre keeps the framing natural without cancelling the effect.
+_SALIENCY_CENTRE_BIAS = 0.25
+
 # Date fields that may appear in the metadata returned by the TV
 _DATE_FIELDS = ("image_date", "date", "create_date", "modified_date")
 # Date formats seen on the Samsung side (EXIF-like and ISO)
@@ -163,6 +172,86 @@ def _detect_faces(img: Image.Image) -> list[tuple[int, int, int, int]]:
         return []
 
 
+def _saliency_offset(img: Image.Image, crop_w: int, crop_h: int) -> tuple[int, int] | None:
+    """
+    Position (left, top) of the crop window over the busiest area of the image.
+
+    Used when face detection is unavailable. Cropping to a ratio leaves only one
+    axis free, so this is a one-dimensional search: the per-row (or per-column)
+    edge energy is summed, then the best sliding window is picked, with a mild
+    pull towards the centre. Returns None when numpy is missing or the image is
+    degenerate, in which case the caller falls back to a centred crop.
+    """
+    try:
+        import numpy as np
+    except ImportError:
+        _LOGGER.debug("numpy unavailable, centred crop instead of saliency")
+        return None
+
+    free_x = crop_w < img.width
+    free_y = crop_h < img.height
+    if not free_x and not free_y:
+        return 0, 0
+
+    try:
+        scale = min(1.0, _SALIENCY_MAX_DIM / max(img.width, img.height))
+        small = img if scale >= 1.0 else img.resize(
+            (max(2, int(img.width * scale)), max(2, int(img.height * scale))),
+            Image.BILINEAR,
+        )
+        grey = np.asarray(small.convert("L"), dtype=np.float32)
+        if grey.shape[0] < 2 or grey.shape[1] < 2:
+            return None
+
+        # Edge energy: absolute differences with the neighbour, spread over both
+        # pixels of each pair so the map keeps the shape of the image.
+        energy = np.zeros_like(grey)
+        gx = np.abs(np.diff(grey, axis=1))
+        gy = np.abs(np.diff(grey, axis=0))
+        energy[:, :-1] += gx
+        energy[:, 1:] += gx
+        energy[:-1, :] += gy
+        energy[1:, :] += gy
+
+        sh, sw = grey.shape
+        if free_y:
+            profile = energy.sum(axis=1)
+            window = max(1, min(sh, round(crop_h * sh / img.height)))
+            span, full_span, full_window = sh, img.height, crop_h
+        else:
+            profile = energy.sum(axis=0)
+            window = max(1, min(sw, round(crop_w * sw / img.width)))
+            span, full_span, full_window = sw, img.width, crop_w
+
+        # A flat image carries no signal: the centre bias below is
+        # multiplicative, so on an all-zero profile argmax would silently
+        # return offset 0, i.e. the top or left edge. Fall back to centred.
+        if not float(profile.sum()) > 0.0:
+            _LOGGER.debug("Uniform image, no salient area, cropping to the centre")
+            return None
+
+        if window >= span:
+            best_small = 0
+        else:
+            cumulative = np.concatenate(([0.0], np.cumsum(profile, dtype=np.float64)))
+            sums = cumulative[window:] - cumulative[:-window]
+            if not float(sums.max()) > 0.0:
+                return None
+            # Mild centre prior, expressed as a multiplicative weight over the
+            # candidate offsets rather than a hard constraint.
+            offsets = np.arange(sums.size, dtype=np.float64)
+            centres = offsets + window / 2.0
+            distance = np.abs(centres - span / 2.0) / (span / 2.0)
+            best_small = int(np.argmax(sums * (1.0 - _SALIENCY_CENTRE_BIAS * distance)))
+
+        offset = int(round(best_small * full_span / span))
+        offset = max(0, min(offset, full_span - full_window))
+        return (0, offset) if free_y else (offset, 0)
+    except Exception:  # noqa: BLE001 - cropping must never break an upload
+        _LOGGER.exception("Saliency analysis failed, cropping to the centre")
+        return None
+
+
 def _crop_box_for_faces(
     img_w: int, img_h: int, crop_w: int, crop_h: int,
     faces: list[tuple[int, int, int, int]],
@@ -204,16 +293,25 @@ def _crop_to_ratio(img: Image.Image, target_ratio: float, smart: bool) -> Image.
     crop_w = max(1, min(crop_w, img.width))
     crop_h = max(1, min(crop_h, img.height))
 
-    faces = _detect_faces(img) if smart else []
-    if faces:
-        left, top = _crop_box_for_faces(img.width, img.height, crop_w, crop_h, faces)
-        _LOGGER.info(
-            "%d face(s) detected, crop anchored on them (offset %d,%d)",
-            len(faces), left, top,
-        )
-    else:
-        if smart:
-            _LOGGER.debug("No face detected, cropping to the centre")
+    left = top = None
+
+    if smart:
+        faces = _detect_faces(img)
+        if faces:
+            left, top = _crop_box_for_faces(img.width, img.height, crop_w, crop_h, faces)
+            _LOGGER.info(
+                "%d face(s) detected, crop anchored on them (offset %d,%d)",
+                len(faces), left, top,
+            )
+        else:
+            # No face, or no face detector available: aim at the busiest area
+            # rather than blindly at the centre.
+            offset = _saliency_offset(img, crop_w, crop_h)
+            if offset is not None:
+                left, top = offset
+                _LOGGER.info("Crop anchored on the busiest area (offset %d,%d)", left, top)
+
+    if left is None or top is None:
         left = (img.width - crop_w) // 2
         top = (img.height - crop_h) // 2
 
