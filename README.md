@@ -1,5 +1,9 @@
 # Samsung Frame Artwork
 
+[![Validation](https://github.com/pyvignau/ha-samsung-frame-artwork/actions/workflows/validate.yml/badge.svg)](https://github.com/pyvignau/ha-samsung-frame-artwork/actions/workflows/validate.yml)
+[![hacs](https://img.shields.io/badge/HACS-custom-41BDF5.svg)](https://hacs.xyz)
+[![licence](https://img.shields.io/badge/licence-MIT-green.svg)](LICENSE)
+
 Intégration Home Assistant qui fait tourner automatiquement les œuvres affichées
 en mode Art sur une TV **Samsung The Frame**.
 
@@ -89,15 +93,56 @@ protection, car il est surtout appelé depuis des automatisations.
 
 ## Installation
 
+### Via HACS (recommandé)
+
+HACS → menu ⋮ → **Dépôts personnalisés** → ajouter
+`https://github.com/pyvignau/ha-samsung-frame-artwork` en catégorie **Integration**,
+puis installer **Samsung Frame Artwork** et redémarrer Home Assistant.
+
+### Manuellement
+
 Copier `custom_components/samsung_frame/` dans le dossier `config/` de Home
-Assistant, redémarrer, puis **Paramètres → Appareils et services → Ajouter une
-intégration → Samsung Frame Artwork**.
+Assistant, puis redémarrer.
+
+### Configuration
+
+**Paramètres → Appareils et services → Ajouter une intégration → Samsung Frame
+Artwork**.
 
 La TV doit être allumée (ou en mode Art) lors du premier appairage : elle affiche
 une demande d'autorisation à accepter avec la télécommande. Le jeton est ensuite
 conservé dans `.storage/samsung_frame_<entry_id>_tv_token`.
 
+Au premier démarrage, Home Assistant installe les dépendances dans
+`config/deps`, dont `opencv-python-headless` (~45 Mo) : ce démarrage-là est
+nettement plus long que les suivants.
+
+> **Pensez à réserver l'adresse IP de la TV dans votre DHCP.** Un changement
+> d'adresse coupe l'intégration silencieusement : les images continuent d'être
+> téléchargées, mais plus rien n'est envoyé.
+
+## Avertissement
+
+theframetv.com est parcouru par scraping, et les API d'albums partagés iCloud
+(CloudKit comme `sharedstreams`) ne sont pas documentées : elles ont été
+reconstituées par observation du client web d'Apple. Ces deux sources peuvent
+cesser de fonctionner sans préavis. En cas de panne, le journal Home Assistant
+indique l'étape exacte qui échoue.
+
 ## Notes de version
+
+### 1.3.0
+
+Mode de recadrage **`smart`** : les visages présents sur la photo sont détectés
+et le cadre est calé dessus, au lieu du recadrage centré qui décapite les
+portraits. Sans visage détecté, le résultat est identique à `fill`.
+
+Prise en charge des **albums partagés iCloud modernes**, qu'Apple a migrés de
+l'API `sharedstreams` vers CloudKit ; l'ancienne API reste en repli automatique.
+Les originaux en HEIC, illisibles par Pillow, passent par la dérivée JPEG.
+
+**Protection du visionnage** : la rotation programmée ne bascule plus la TV en
+mode Art pendant que vous regardez un contenu, et réessaie toutes les 15 minutes.
 
 ### 1.2.0
 

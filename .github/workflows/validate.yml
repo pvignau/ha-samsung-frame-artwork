@@ -1,0 +1,72 @@
+name: Validation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Les deux validateurs evoluent : un passage hebdomadaire signale les
+    # ruptures sans attendre un commit.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  hassfest:
+    name: Home Assistant hassfest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: home-assistant/actions/hassfest@master
+
+  hacs:
+    name: HACS
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hacs/action@main
+        with:
+          category: integration
+
+  lint:
+    name: Python
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install pyflakes
+      - name: Noms indefinis et imports inutilises
+        run: pyflakes custom_components/samsung_frame/*.py custom_components/samsung_frame/sources/*.py
+      - name: JSON valide et traductions alignees
+        run: |
+          python - <<'PY'
+          import json, pathlib, sys
+          def flat(d, p=""):
+              out = {}
+              for k, v in d.items():
+                  q = f"{p}.{k}" if p else k
+                  out.update(flat(v, q)) if isinstance(v, dict) else out.update({q: v})
+              return out
+          base = pathlib.Path("custom_components/samsung_frame")
+          files = {n: json.loads((base / n).read_text())
+                   for n in ("strings.json", "translations/en.json", "translations/fr.json")}
+          problems = []
+          if files["strings.json"] != files["translations/en.json"]:
+              problems.append("translations/en.json doit etre une copie de strings.json")
+          keys = {n: set(flat(d)) for n, d in files.items()}
+          for n in ("translations/fr.json",):
+              missing = keys["strings.json"] - keys[n]
+              extra = keys[n] - keys["strings.json"]
+              if missing: problems.append(f"{n}: cles manquantes {sorted(missing)}")
+              if extra: problems.append(f"{n}: cles en trop {sorted(extra)}")
+          # Un chevron litteral casse l'analyseur ICU du frontend (UNCLOSED_TAG)
+          for n, d in files.items():
+              for k, v in flat(d).items():
+                  if isinstance(v, str) and ("<" in v or ">" in v):
+                      problems.append(f"{n}:{k} contient un chevron")
+                  if isinstance(v, str) and v.count("{") != v.count("}"):
+                      problems.append(f"{n}:{k} a des accolades desequilibrees")
+          print("\n".join(problems) or "traductions OK")
+          sys.exit(1 if problems else 0)
+          PY
