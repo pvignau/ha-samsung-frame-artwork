@@ -29,15 +29,16 @@ _PARTITIONS = tuple(range(1, 10))
 _MAX_REDIRECTS = 10
 
 
-# Deux formes de lien public, avec le token dans le fragment :
-#   https://www.icloud.com/photos/#B0abcdef          (ancienne)
-#   https://www.icloud.com/sharedalbum/#B0abcdef     (actuelle)
+# Trois formes de lien public selon l'epoque :
+#   https://www.icloud.com/photos/#B0abcdef          (la plus ancienne)
+#   https://www.icloud.com/sharedalbum/#B0abcdef
+#   https://photos.icloud.com/shared/album/B0abcdef  (actuelle)
 # Le '#' est optionnel, et l'app Photos ajoute parfois le nom de l'album en
 # second fragment : .../#B0abcdef#Vacances. Le token s'arrete donc au premier
 # '#', '/' ou '?' rencontre. Doit rester coherent avec ICLOUD_URL_RE du
 # config_flow, qui valide la saisie de l'utilisateur.
 _TOKEN_RE = re.compile(
-    r"/(?:photos|sharedalbum)/#?([A-Za-z0-9_-]+)",
+    r"/(?:photos|sharedalbum|shared/album)/#?([A-Za-z0-9_-]+)",
     re.IGNORECASE,
 )
 
