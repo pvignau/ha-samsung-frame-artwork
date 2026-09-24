@@ -28,6 +28,10 @@ DEFAULT_ICLOUD_WEIGHT = 50
 DEFAULT_INTERVAL_HOURS = 6
 DEFAULT_HISTORY_SIZE = 20
 DEFAULT_IMAGE_MODE = "fill"
+# fill  : recadrage centre au ratio de l'ecran
+# fit   : image entiere, bandes noires
+# smart : recadrage cale sur les visages detectes, centre a defaut
+IMAGE_MODES = ("fill", "fit", "smart")
 DEFAULT_IMAGE_WIDTH = 3840
 DEFAULT_IMAGE_HEIGHT = 2160
 DEFAULT_MAX_TV_IMAGES = 10

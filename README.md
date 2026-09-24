@@ -49,7 +49,23 @@ catalogue n'a pas été parcouru.
 |---|---|---|
 | `interval_hours` | 6 | Intervalle de rotation |
 | `history_size` | 20 | Anti-répétition |
-| `image_mode` | `fill` | `fill` = recadrage, `fit` = bandes noires |
+| `image_mode` | `fill` | `fill` = recadrage centré, `fit` = bandes noires, `smart` = recadrage sur les visages |
+
+### Recadrage intelligent (`smart`)
+
+Une photo de portrait recadrée en 16:9 perd le haut du crâne quand le cadre est
+centré. En mode `smart`, les visages sont détectés (cascades de Haar d'OpenCV)
+et le cadre est calé dessus, avec une marge et un léger décalage vers le haut
+conforme à la composition d'un portrait. S'il n'y a personne sur la photo — le
+cas courant des œuvres de theframetv.com — le comportement est identique à
+`fill`.
+
+La détection tourne sur une version réduite de l'image (800 px au plus grand
+côté), dans l'executor de Home Assistant. Elle nécessite
+`opencv-python-headless`, épinglé sur la branche 4.x : OpenCV 5 a retiré
+`CascadeClassifier` et les cascades. Si la bibliothèque est absente ou
+inutilisable, le recadrage retombe sur le centrage avec un avertissement dans le
+journal.
 | `image_width` / `image_height` | 3840 × 2160 | Résolution cible |
 | `max_tv_images` | 10 | **Images conservées dans la mémoire de la TV** |
 | `cache_max_mb` | 300 | Taille max du cache disque local |

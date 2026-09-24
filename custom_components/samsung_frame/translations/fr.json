@@ -44,7 +44,7 @@
           "max_tv_images": "Nombre d'images envoyées conservées dans la mémoire de la TV. Les images plus anciennes sont supprimées automatiquement de la mémoire de la TV, ce qui évite de saturer son stockage.",
           "cache_max_mb": "Taille maximale du cache de téléchargement local. Les fichiers les plus anciens sont supprimés en premier une fois cette taille dépassée.",
           "index_refresh_days": "Fréquence à laquelle le catalogue theframetv.com est re-parcouru pour découvrir les nouvelles œuvres publiées.",
-          "image_mode": "fill = l'image est recadrée pour remplir tout l'écran ; fit = l'image entière est conservée, avec des bandes noires.",
+          "image_mode": "fill = l'image est recadrée pour remplir tout l'écran ; fit = l'image entière est conservée, avec des bandes noires ; smart = comme fill, mais le cadrage est calé sur les visages détectés, avec repli sur le centrage si personne n'est trouvé.",
           "image_width": "Largeur cible avant envoi. 3840 correspond à une TV Frame 4K.",
           "image_height": "Hauteur cible avant envoi. 2160 correspond à une TV Frame 4K."
         }
@@ -93,7 +93,7 @@
           "max_tv_images": "Nombre d'images envoyées conservées dans la mémoire de la TV. Les images plus anciennes sont supprimées automatiquement de la mémoire de la TV, ce qui évite de saturer son stockage.",
           "cache_max_mb": "Taille maximale du cache de téléchargement local. Les fichiers les plus anciens sont supprimés en premier une fois cette taille dépassée.",
           "index_refresh_days": "Fréquence à laquelle le catalogue theframetv.com est re-parcouru pour découvrir les nouvelles œuvres publiées.",
-          "image_mode": "fill = l'image est recadrée pour remplir tout l'écran ; fit = l'image entière est conservée, avec des bandes noires.",
+          "image_mode": "fill = l'image est recadrée pour remplir tout l'écran ; fit = l'image entière est conservée, avec des bandes noires ; smart = comme fill, mais le cadrage est calé sur les visages détectés, avec repli sur le centrage si personne n'est trouvé.",
           "image_width": "Largeur cible avant envoi. 3840 correspond à une TV Frame 4K.",
           "image_height": "Hauteur cible avant envoi. 2160 correspond à une TV Frame 4K."
         }

@@ -44,7 +44,7 @@
           "max_tv_images": "Number of uploaded images kept in the TV memory. Older images are deleted from the TV automatically, which prevents its storage from filling up.",
           "cache_max_mb": "Maximum size of the local download cache. The oldest files are removed first once this size is exceeded.",
           "index_refresh_days": "How often the theframetv.com catalogue is scraped again to discover newly published artworks.",
-          "image_mode": "fill = the image is cropped to fill the whole screen; fit = the whole image is kept, with black bars.",
+          "image_mode": "fill = the image is cropped to fill the whole screen; fit = the whole image is kept, with black bars; smart = like fill, but the crop is placed on the faces found in the photo, falling back to centred when nobody is detected.",
           "image_width": "Target width before upload. 3840 matches a 4K Frame TV.",
           "image_height": "Target height before upload. 2160 matches a 4K Frame TV."
         }
@@ -93,7 +93,7 @@
           "max_tv_images": "Number of uploaded images kept in the TV memory. Older images are deleted from the TV automatically, which prevents its storage from filling up.",
           "cache_max_mb": "Maximum size of the local download cache. The oldest files are removed first once this size is exceeded.",
           "index_refresh_days": "How often the theframetv.com catalogue is scraped again to discover newly published artworks.",
-          "image_mode": "fill = the image is cropped to fill the whole screen; fit = the whole image is kept, with black bars.",
+          "image_mode": "fill = the image is cropped to fill the whole screen; fit = the whole image is kept, with black bars; smart = like fill, but the crop is placed on the faces found in the photo, falling back to centred when nobody is detected.",
           "image_width": "Target width before upload. 3840 matches a 4K Frame TV.",
           "image_height": "Target height before upload. 2160 matches a 4K Frame TV."
         }

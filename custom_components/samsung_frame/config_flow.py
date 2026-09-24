@@ -24,7 +24,7 @@ from .const import (
     DEFAULT_IMAGE_MODE, DEFAULT_IMAGE_WIDTH, DEFAULT_IMAGE_HEIGHT,
     DEFAULT_MAX_TV_IMAGES, DEFAULT_CACHE_MAX_MB, DEFAULT_INDEX_REFRESH_DAYS,
     DEFAULT_SKIP_WHEN_WATCHING,
-    MIN_IMAGE_DIMENSION, MAX_IMAGE_DIMENSION,
+    MIN_IMAGE_DIMENSION, MAX_IMAGE_DIMENSION, IMAGE_MODES,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -117,7 +117,7 @@ def build_options_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
         ): vol.All(int, vol.Range(min=1, max=90)),
         vol.Optional(
             CONF_IMAGE_MODE, default=_default(CONF_IMAGE_MODE, DEFAULT_IMAGE_MODE)
-        ): vol.In(["fill", "fit"]),
+        ): vol.In(list(IMAGE_MODES)),
         vol.Optional(
             CONF_IMAGE_WIDTH, default=_default(CONF_IMAGE_WIDTH, DEFAULT_IMAGE_WIDTH)
         ): vol.All(int, vol.Range(min=MIN_IMAGE_DIMENSION, max=MAX_IMAGE_DIMENSION)),

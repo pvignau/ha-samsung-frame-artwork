@@ -13,7 +13,7 @@ from PIL import Image
 
 from .const import (
     ART_STATE_ART, ART_STATE_BUSY, ART_STATE_UNREACHABLE,
-    DEFAULT_MAX_TV_IMAGES, UPLOAD_CATEGORY,
+    DEFAULT_MAX_TV_IMAGES, IMAGE_MODES, UPLOAD_CATEGORY,
 )
 
 if TYPE_CHECKING:
@@ -22,6 +22,17 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 MAX_FILE_SIZE = 1_900_000  # ~1.9 MB
+
+# Détection de visages (mode "smart"). L'image est réduite avant analyse : les
+# cascades de Haar n'ont pas besoin de la pleine résolution et le coût chute.
+_FACE_DETECT_MAX_DIM = 800
+# Les visages sont placés légèrement au-dessus du milieu du cadre plutôt qu'en
+# plein centre : c'est la composition habituelle d'un portrait.
+_FACE_VERTICAL_ANCHOR = 0.42
+_FACE_HORIZONTAL_ANCHOR = 0.5
+# Marge ajoutée autour de la boîte des visages, en proportion de sa taille,
+# pour éviter un cadrage collé aux fronts et aux mentons.
+_FACE_PADDING = 0.35
 
 # Champs de date possibles dans les métadonnées renvoyées par la TV
 _DATE_FIELDS = ("image_date", "date", "create_date", "modified_date")
@@ -49,12 +60,11 @@ def prepare_image(image_path: str, width: int = 3840, height: int = 2160,
     if img.width <= 0 or img.height <= 0:
         raise ValueError(f"Image source invalide: {src_width}x{src_height}")
 
-    if mode not in ("fill", "fit"):
+    if mode not in IMAGE_MODES:
         _LOGGER.warning("Mode d'image inconnu '%s', repli sur 'fill'", mode)
         mode = "fill"
 
     target_ratio = width / height
-    img_ratio = img.width / img.height
 
     if mode == "fit":
         # Lettrebox: l'image est contenue dans un fond noir déjà à la bonne taille.
@@ -65,21 +75,15 @@ def prepare_image(image_path: str, width: int = 3840, height: int = 2160,
         background.paste(img, (paste_x, paste_y))
         img = background  # déjà exactement width x height, pas de resize final
     else:
-        # fill: recadrage centré au bon ratio puis mise à l'échelle.
+        # fill / smart: recadrage au bon ratio puis mise à l'échelle. En mode
+        # smart le cadre est calé sur les visages plutôt que centré.
         if src_width < width or src_height < height:
             _LOGGER.warning(
                 "Image source (%dx%d) plus petite que la cible (%dx%d), "
                 "upscaling appliqué (perte de qualité possible)",
                 src_width, src_height, width, height,
             )
-        if img_ratio > target_ratio:
-            new_width = int(img.height * target_ratio)
-            offset = (img.width - new_width) // 2
-            img = img.crop((offset, 0, offset + new_width, img.height))
-        else:
-            new_height = int(img.width / target_ratio)
-            offset = (img.height - new_height) // 2
-            img = img.crop((0, offset, img.width, offset + new_height))
+        img = _crop_to_ratio(img, target_ratio, smart=(mode == "smart"))
         img = img.resize((width, height), Image.LANCZOS)
 
     for quality in (jpeg_quality, 80, 70, 60):
@@ -96,6 +100,124 @@ def prepare_image(image_path: str, width: int = 3840, height: int = 2160,
     img_half.save(buf, format="JPEG", quality=70, optimize=True)
     _LOGGER.warning("Image réduite à %dx%d", width // 2, height // 2)
     return buf.getvalue()
+
+
+def _detect_faces(img: Image.Image) -> list[tuple[int, int, int, int]]:
+    """
+    Détecte les visages et retourne leurs rectangles (x, y, w, h) en
+    coordonnées de l'image d'origine. Liste vide si OpenCV est absent, si la
+    détection échoue ou si l'image ne contient personne.
+    """
+    try:
+        import cv2
+        import numpy as np
+    except ImportError:
+        _LOGGER.warning(
+            "opencv-python-headless indisponible : recadrage centré au lieu du mode smart"
+        )
+        return []
+
+    # OpenCV 5 a retiré CascadeClassifier et les cascades de Haar ; le manifeste
+    # épingle donc la branche 4.x. Si une 5.x se retrouve quand même installée,
+    # on le dit clairement plutôt que de recadrer au centre sans explication.
+    if not hasattr(cv2, "CascadeClassifier") or not hasattr(cv2, "data"):
+        _LOGGER.warning(
+            "OpenCV %s ne fournit pas les cascades de Haar (branche 4.x requise) : "
+            "recadrage centré au lieu du mode smart",
+            getattr(cv2, "__version__", "?"),
+        )
+        return []
+
+    try:
+        scale = min(1.0, _FACE_DETECT_MAX_DIM / max(img.width, img.height))
+        small = img if scale >= 1.0 else img.resize(
+            (max(1, int(img.width * scale)), max(1, int(img.height * scale))),
+            Image.BILINEAR,
+        )
+        gray = cv2.cvtColor(np.asarray(small), cv2.COLOR_RGB2GRAY)
+        gray = cv2.equalizeHist(gray)
+
+        boxes: list[tuple[int, int, int, int]] = []
+        for cascade_name in ("haarcascade_frontalface_default.xml",
+                             "haarcascade_profileface.xml"):
+            cascade = cv2.CascadeClassifier(cv2.data.haarcascades + cascade_name)
+            if cascade.empty():
+                continue
+            found = cascade.detectMultiScale(
+                gray, scaleFactor=1.1, minNeighbors=5, minSize=(24, 24)
+            )
+            boxes.extend(tuple(int(v) for v in box) for box in found)
+            if boxes and cascade_name.startswith("haarcascade_frontalface"):
+                break  # de face suffit, inutile de payer le profil
+
+        if not boxes:
+            return []
+
+        inv = 1.0 / scale if scale else 1.0
+        return [
+            (int(x * inv), int(y * inv), int(w * inv), int(h * inv))
+            for x, y, w, h in boxes
+        ]
+    except Exception:  # noqa: BLE001 - la détection ne doit jamais casser un upload
+        _LOGGER.exception("Détection de visages en échec, recadrage centré")
+        return []
+
+
+def _crop_box_for_faces(
+    img_w: int, img_h: int, crop_w: int, crop_h: int,
+    faces: list[tuple[int, int, int, int]],
+) -> tuple[int, int]:
+    """Position (gauche, haut) du cadre de recadrage englobant au mieux les visages."""
+    x0 = min(f[0] for f in faces)
+    y0 = min(f[1] for f in faces)
+    x1 = max(f[0] + f[2] for f in faces)
+    y1 = max(f[1] + f[3] for f in faces)
+
+    pad_x = (x1 - x0) * _FACE_PADDING
+    pad_y = (y1 - y0) * _FACE_PADDING
+    center_x = (x0 + x1) / 2
+    center_y = (y0 + y1) / 2
+
+    # Si la zone des visages (marge comprise) dépasse le cadre, on se contente
+    # de la centrer : impossible de tout garder.
+    left = center_x - crop_w * _FACE_HORIZONTAL_ANCHOR
+    top = center_y - crop_h * _FACE_VERTICAL_ANCHOR
+
+    # Tirer le cadre pour inclure la marge quand la place le permet.
+    left = min(left, x0 - pad_x)
+    left = max(left, x1 + pad_x - crop_w)
+    top = min(top, y0 - pad_y)
+    top = max(top, y1 + pad_y - crop_h)
+
+    left = int(round(max(0, min(left, img_w - crop_w))))
+    top = int(round(max(0, min(top, img_h - crop_h))))
+    return left, top
+
+
+def _crop_to_ratio(img: Image.Image, target_ratio: float, smart: bool) -> Image.Image:
+    """Recadre au ratio cible, centré ou calé sur les visages détectés."""
+    img_ratio = img.width / img.height
+    if img_ratio > target_ratio:
+        crop_w, crop_h = int(img.height * target_ratio), img.height
+    else:
+        crop_w, crop_h = img.width, int(img.width / target_ratio)
+    crop_w = max(1, min(crop_w, img.width))
+    crop_h = max(1, min(crop_h, img.height))
+
+    faces = _detect_faces(img) if smart else []
+    if faces:
+        left, top = _crop_box_for_faces(img.width, img.height, crop_w, crop_h, faces)
+        _LOGGER.info(
+            "%d visage(s) détecté(s), recadrage calé dessus (offset %d,%d)",
+            len(faces), left, top,
+        )
+    else:
+        if smart:
+            _LOGGER.debug("Aucun visage détecté, recadrage centré")
+        left = (img.width - crop_w) // 2
+        top = (img.height - crop_h) // 2
+
+    return img.crop((left, top, left + crop_w, top + crop_h))
 
 
 def _parse_image_date(item: dict[str, Any]) -> datetime | None:
