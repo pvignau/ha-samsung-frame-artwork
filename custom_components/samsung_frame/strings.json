@@ -37,7 +37,7 @@
           "theframetv_weight": "Relative share of theframetv.com in the random draw, compared with the other enabled sources.",
           "icloud_enabled": "Use the photos of a shared iCloud album.",
           "icloud_weight": "Relative share of the iCloud album in the random draw, compared with the other enabled sources.",
-          "icloud_share_url": "Public link of the shared album, in the form https://www.icloud.com/photos/<token>.",
+          "icloud_share_url": "Public link of the shared album, for example https://www.icloud.com/sharedalbum/#B0abc123 — the older https://www.icloud.com/photos/#B0abc123 form works too. In Photos: Shared Album, then enable Public Website.",
           "interval_hours": "Delay between two artwork changes, in hours.",
           "skip_when_watching": "When the TV is switched on and showing content, the scheduled rotation is skipped instead of forcing Art Mode, and retried every 15 minutes. Pressing the 'Update Artwork Now' button always pushes an image regardless.",
           "history_size": "Number of recently displayed artworks remembered, so they are not drawn again too soon.",
@@ -53,7 +53,7 @@
     "error": {
       "cannot_connect": "Cannot connect to the TV. Check the IP, port and that the TV is powered on.",
       "icloud_url_required": "An iCloud shared album URL is required when iCloud is enabled.",
-      "icloud_url_invalid": "This URL does not look like an iCloud shared album link. Expected form: https://www.icloud.com/photos/<token>.",
+      "icloud_url_invalid": "This URL does not look like an iCloud shared album link. Expected something like https://www.icloud.com/sharedalbum/#B0abc123",
       "no_source_enabled": "At least one artwork source must be enabled."
     },
     "abort": {
@@ -86,7 +86,7 @@
           "theframetv_weight": "Relative share of theframetv.com in the random draw, compared with the other enabled sources.",
           "icloud_enabled": "Use the photos of a shared iCloud album.",
           "icloud_weight": "Relative share of the iCloud album in the random draw, compared with the other enabled sources.",
-          "icloud_share_url": "Public link of the shared album, in the form https://www.icloud.com/photos/<token>.",
+          "icloud_share_url": "Public link of the shared album, for example https://www.icloud.com/sharedalbum/#B0abc123 — the older https://www.icloud.com/photos/#B0abc123 form works too. In Photos: Shared Album, then enable Public Website.",
           "interval_hours": "Delay between two artwork changes, in hours.",
           "skip_when_watching": "When the TV is switched on and showing content, the scheduled rotation is skipped instead of forcing Art Mode, and retried every 15 minutes. Pressing the 'Update Artwork Now' button always pushes an image regardless.",
           "history_size": "Number of recently displayed artworks remembered, so they are not drawn again too soon.",
@@ -102,7 +102,7 @@
     "error": {
       "cannot_connect": "Cannot connect to the TV. Check the IP, port and that the TV is powered on.",
       "icloud_url_required": "An iCloud shared album URL is required when iCloud is enabled.",
-      "icloud_url_invalid": "This URL does not look like an iCloud shared album link. Expected form: https://www.icloud.com/photos/<token>.",
+      "icloud_url_invalid": "This URL does not look like an iCloud shared album link. Expected something like https://www.icloud.com/sharedalbum/#B0abc123",
       "no_source_enabled": "At least one artwork source must be enabled."
     }
   },
