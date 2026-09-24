@@ -2,11 +2,11 @@
   "domain": "samsung_frame",
   "name": "Samsung Frame Artwork",
   "version": "1.3.0",
-  "documentation": "https://github.com/pyvignau/ha-samsung-frame-artwork",
-  "issue_tracker": "https://github.com/pyvignau/ha-samsung-frame-artwork/issues",
+  "documentation": "https://github.com/pvignau/ha-samsung-frame-artwork",
+  "issue_tracker": "https://github.com/pvignau/ha-samsung-frame-artwork/issues",
   "dependencies": [],
   "codeowners": [
-    "@pyvignau"
+    "@pvignau"
   ],
   "requirements": [
     "samsungtvws @ git+https://github.com/NickWaterton/samsung-tv-ws-api.git@fe95ef1d784cd32f49bf9a07ec479576574eea07",

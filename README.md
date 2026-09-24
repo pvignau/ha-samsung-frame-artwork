@@ -1,6 +1,6 @@
 # Samsung Frame Artwork
 
-[![Validation](https://github.com/pyvignau/ha-samsung-frame-artwork/actions/workflows/validate.yml/badge.svg)](https://github.com/pyvignau/ha-samsung-frame-artwork/actions/workflows/validate.yml)
+[![Validation](https://github.com/pvignau/ha-samsung-frame-artwork/actions/workflows/validate.yml/badge.svg)](https://github.com/pvignau/ha-samsung-frame-artwork/actions/workflows/validate.yml)
 [![hacs](https://img.shields.io/badge/HACS-custom-41BDF5.svg)](https://hacs.xyz)
 [![licence](https://img.shields.io/badge/licence-MIT-green.svg)](LICENSE)
 
@@ -96,7 +96,7 @@ protection, car il est surtout appelé depuis des automatisations.
 ### Via HACS (recommandé)
 
 HACS → menu ⋮ → **Dépôts personnalisés** → ajouter
-`https://github.com/pyvignau/ha-samsung-frame-artwork` en catégorie **Integration**,
+`https://github.com/pvignau/ha-samsung-frame-artwork` en catégorie **Integration**,
 puis installer **Samsung Frame Artwork** et redémarrer Home Assistant.
 
 ### Manuellement
