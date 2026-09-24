@@ -115,10 +115,6 @@ The TV must be on (or in Art Mode) during the first pairing: it shows an
 authorisation prompt to accept with the remote. The token is then stored in
 `.storage/samsung_frame_<entry_id>_tv_token`.
 
-On the first start, Home Assistant installs the dependencies into `config/deps`,
-including `opencv-python-headless` (~45 MB): that particular start is noticeably
-longer than the following ones.
-
 > **Reserve the IP address of the TV in your DHCP server.** An address change
 > breaks the integration silently: images keep being downloaded, but nothing is
 > sent any more.
