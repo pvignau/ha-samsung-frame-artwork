@@ -19,21 +19,30 @@ from .const import (
     CONF_TV_IP, CONF_TV_PORT,
     CONF_THEFRAMETV_ENABLED, CONF_THEFRAMETV_WEIGHT,
     CONF_ICLOUD_ENABLED, CONF_ICLOUD_WEIGHT, CONF_ICLOUD_URL,
+    CONF_CUSTOM_ENABLED, CONF_CUSTOM_WEIGHT, CONF_CUSTOM_URLS,
     CONF_INTERVAL_HOURS, CONF_HISTORY_SIZE,
     CONF_IMAGE_MODE, CONF_IMAGE_WIDTH, CONF_IMAGE_HEIGHT,
     CONF_MAX_TV_IMAGES, CONF_CACHE_MAX_MB, CONF_INDEX_REFRESH_DAYS,
-    CONF_SKIP_WHEN_WATCHING,
+    CONF_SKIP_WHEN_WATCHING, CONF_SHOW_CAPTION,
     DEFAULT_TV_PORT, DEFAULT_THEFRAMETV_WEIGHT, DEFAULT_ICLOUD_WEIGHT,
-    DEFAULT_INTERVAL_HOURS, DEFAULT_HISTORY_SIZE,
+    DEFAULT_CUSTOM_WEIGHT, DEFAULT_INTERVAL_HOURS, DEFAULT_HISTORY_SIZE,
     DEFAULT_IMAGE_MODE, DEFAULT_IMAGE_WIDTH, DEFAULT_IMAGE_HEIGHT,
     DEFAULT_MAX_TV_IMAGES, DEFAULT_CACHE_MAX_MB, DEFAULT_INDEX_REFRESH_DAYS,
-    DEFAULT_SKIP_WHEN_WATCHING, RETRY_WHEN_BUSY_MINUTES,
+    DEFAULT_SKIP_WHEN_WATCHING, DEFAULT_SHOW_CAPTION, RETRY_WHEN_BUSY_MINUTES,
     ART_STATE_BUSY, ART_STATE_UNREACHABLE,
 )
-from .sources import theframetv, icloud
+from .sources import theframetv, icloud, custom_url
 from . import uploader
 
 _LOGGER = logging.getLogger(__name__)
+
+# (source, enabled key, enabled by default, weight key, default weight).
+# The source name is also its cache directory and its history storage prefix.
+_SOURCES = (
+    ("theframetv", CONF_THEFRAMETV_ENABLED, True, CONF_THEFRAMETV_WEIGHT, DEFAULT_THEFRAMETV_WEIGHT),
+    ("icloud", CONF_ICLOUD_ENABLED, False, CONF_ICLOUD_WEIGHT, DEFAULT_ICLOUD_WEIGHT),
+    ("custom", CONF_CUSTOM_ENABLED, False, CONF_CUSTOM_WEIGHT, DEFAULT_CUSTOM_WEIGHT),
+)
 
 # Maximum length of an HA state string is 255 – keep a small safety margin.
 MAX_NAME_LENGTH = 250
@@ -149,8 +158,10 @@ class SamsungFrameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Load persistent history
         stored = await self._store.async_load() or {}
         history_size = cfg.get(CONF_HISTORY_SIZE, DEFAULT_HISTORY_SIZE)
-        tf_history: list[str] = stored.get("theframetv_history", [])[-history_size:]
-        ic_history: list[str] = stored.get("icloud_history", [])[-history_size:]
+        histories: dict[str, list[str]] = {
+            name: stored.get(f"{name}_history", [])[-history_size:]
+            for name, *_ in _SOURCES
+        }
 
         source = self._pick_source(cfg)
         if source is None:
@@ -158,42 +169,34 @@ class SamsungFrameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         # Pre-compute paths (safe to access from main thread)
         index_file = self._index_file()
-        tf_cache = self._cache_dir("theframetv")
-        ic_cache = self._cache_dir("icloud")
 
         # Keep the theframetv catalogue fresh, otherwise the rotation keeps
         # cycling over the same stale (and possibly seasonal) artworks.
         if cfg.get(CONF_THEFRAMETV_ENABLED, True):
             await self._async_refresh_index_if_stale(cfg, index_file)
 
-        # Fetch image in executor (sync network calls)
-        result = await self.hass.async_add_executor_job(
-            self._get_image_sync,
-            cfg, source, tf_history, ic_history, index_file, tf_cache, ic_cache,
-        )
-
-        # Fallback to the other source if primary fails
-        fallback_source = source
-        if result is None:
-            fallback = "icloud" if source == "theframetv" else "theframetv"
-            enabled_key = CONF_ICLOUD_ENABLED if fallback == "icloud" else CONF_THEFRAMETV_ENABLED
-            if cfg.get(enabled_key, False):
-                _LOGGER.warning("Primary source %s failed, trying fallback %s", source, fallback)
-                result = await self.hass.async_add_executor_job(
-                    self._get_image_sync,
-                    cfg, fallback, tf_history, ic_history, index_file, tf_cache, ic_cache,
-                )
-                fallback_source = fallback
-                if result is not None:
-                    source = fallback
+        # Drawn source first, then the other enabled ones as fallbacks.
+        tried = [source] + [s for s in self._enabled_sources(cfg) if s != source]
+        result = None
+        for failed, attempt in zip([None] + tried, tried):
+            if failed is not None:
+                _LOGGER.warning("Source %s failed, trying fallback %s", failed, attempt)
+            # Fetch image in executor (sync network calls)
+            result = await self.hass.async_add_executor_job(
+                self._get_image_sync,
+                cfg, attempt, histories[attempt], index_file, self._cache_dir(attempt),
+            )
+            if result is not None:
+                source = attempt
+                break
 
         if result is None:
-            tried = [source] if source == fallback_source else [source, fallback_source]
             raise UpdateFailed(
                 "No image could be obtained from the enabled source(s): "
-                + ", ".join(t for t in tried if t)
+                + ", ".join(tried)
                 + ". Check the Home Assistant log for the per-source reason "
-                  "(invalid iCloud link, empty album, or theframetv.com unreachable)."
+                  "(invalid iCloud link, empty album, theframetv.com unreachable, "
+                  "or custom URL failing)."
             )
 
         # Upload to the TV (native async)
@@ -208,6 +211,10 @@ class SamsungFrameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "height": cfg.get(CONF_IMAGE_HEIGHT, DEFAULT_IMAGE_HEIGHT),
                 "mode": cfg.get(CONF_IMAGE_MODE, DEFAULT_IMAGE_MODE),
                 "jpeg_quality": 95,
+                "caption": (
+                    self._caption(result)
+                    if cfg.get(CONF_SHOW_CAPTION, DEFAULT_SHOW_CAPTION) else None
+                ),
             },
             max_tv_images=cfg.get(CONF_MAX_TV_IMAGES, DEFAULT_MAX_TV_IMAGES),
         )
@@ -218,10 +225,7 @@ class SamsungFrameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
 
         # Persist history and current state
-        if source == "theframetv":
-            tf_history.append(result["source_id"])
-        else:
-            ic_history.append(result["source_id"])
+        histories[source].append(result["source_id"])
 
         current = {
             "name": self._clean_name(result["name"]),
@@ -229,9 +233,11 @@ class SamsungFrameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "path": result["path"],
             "last_update": dt_util.now().isoformat(),
         }
+        # Credit, when the source tells who made the image.
+        if result.get("author"):
+            current["author"] = result["author"]
         await self._store.async_save({
-            "theframetv_history": tf_history,
-            "icloud_history": ic_history,
+            **{f"{name}_history": history for name, history in histories.items()},
             "current": current,
         })
 
@@ -313,7 +319,7 @@ class SamsungFrameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if max_bytes <= 0:
             return
 
-        cache_dirs = [self._cache_dir("theframetv"), self._cache_dir("icloud")]
+        cache_dirs = [self._cache_dir(name) for name, *_ in _SOURCES]
         index_file = self._index_file()
         try:
             await self.hass.async_add_executor_job(
@@ -340,6 +346,13 @@ class SamsungFrameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if len(stripped) > MAX_NAME_LENGTH:
             stripped = stripped[:MAX_NAME_LENGTH].rstrip()
         return stripped
+
+    @classmethod
+    def _caption(cls, result: dict[str, Any]) -> str | None:
+        """"Author — Title" for the on-screen caption, None when nothing is known."""
+        title = cls._clean_name(result["title"]) if result.get("title") else ""
+        parts = [part for part in (result.get("author"), title) if part]
+        return " — ".join(parts) or None
 
     @staticmethod
     def _purge_caches_sync(
@@ -414,15 +427,20 @@ class SamsungFrameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return removed
 
     @staticmethod
+    def _enabled_sources(cfg: dict[str, Any]) -> list[str]:
+        return [
+            name for name, enabled_key, enabled_default, *_ in _SOURCES
+            if cfg.get(enabled_key, enabled_default)
+        ]
+
+    @staticmethod
     def _pick_source(cfg: dict[str, Any]) -> str | None:
         candidates: list[str] = []
         weights: list[int] = []
-        if cfg.get(CONF_THEFRAMETV_ENABLED, True):
-            candidates.append("theframetv")
-            weights.append(cfg.get(CONF_THEFRAMETV_WEIGHT, DEFAULT_THEFRAMETV_WEIGHT))
-        if cfg.get(CONF_ICLOUD_ENABLED, False):
-            candidates.append("icloud")
-            weights.append(cfg.get(CONF_ICLOUD_WEIGHT, DEFAULT_ICLOUD_WEIGHT))
+        for name, enabled_key, enabled_default, weight_key, weight_default in _SOURCES:
+            if cfg.get(enabled_key, enabled_default):
+                candidates.append(name)
+                weights.append(cfg.get(weight_key, weight_default))
         if not candidates:
             return None
         return random.choices(candidates, weights=weights, k=1)[0]
@@ -431,11 +449,9 @@ class SamsungFrameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def _get_image_sync(
         cfg: dict[str, Any],
         source: str,
-        tf_history: list[str],
-        ic_history: list[str],
+        history: list[str],
         index_file: str,
-        tf_cache: str,
-        ic_cache: str,
+        cache_dir: str,
     ) -> dict[str, Any] | None:
         """Fetch and download an image from the chosen source. Runs in executor."""
         if source == "theframetv":
@@ -445,18 +461,19 @@ class SamsungFrameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if not artworks:
                 return None
 
-            avoid = set(tf_history)
+            avoid = set(history)
             candidates = [a for a in artworks if a["page_url"] not in avoid]
             if not candidates:
                 candidates = artworks  # full cycle: restart from scratch
 
             artwork = random.choice(candidates)
-            path = theframetv.download_image(artwork, tf_cache)
+            path = theframetv.download_image(artwork, cache_dir)
             if not path:
                 return None
             return {
                 "path": path,
                 "name": artwork["name"],
+                "title": artwork["name"],
                 "source_id": artwork["page_url"],
             }
 
@@ -469,13 +486,13 @@ class SamsungFrameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if not photos:
                 return None
 
-            avoid = set(ic_history)
+            avoid = set(history)
             candidates = [p for p in photos if p.get("filename") not in avoid]
             if not candidates:
                 candidates = photos
 
             photo = random.choice(candidates)
-            path = icloud.download_image(photo, ic_cache)
+            path = icloud.download_image(photo, cache_dir)
             if not path:
                 return None
             return {
@@ -483,5 +500,15 @@ class SamsungFrameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "name": photo.get("filename", "unknown"),
                 "source_id": photo.get("filename", ""),
             }
+
+        if source == "custom":
+            entries = custom_url.parse_lines(cfg.get(CONF_CUSTOM_URLS, ""))
+            if not entries:
+                return None
+            return custom_url.get_image(
+                entries, cache_dir, history,
+                cfg.get(CONF_IMAGE_WIDTH, DEFAULT_IMAGE_WIDTH),
+                cfg.get(CONF_IMAGE_HEIGHT, DEFAULT_IMAGE_HEIGHT),
+            )
 
         return None

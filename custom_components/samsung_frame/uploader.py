@@ -5,11 +5,12 @@ Uses NickWaterton's samsungtvws fork (handles TLS, chunking, Frame 2022/2023).
 from __future__ import annotations
 
 import io
+import os
 import logging
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 
 from .const import (
     ART_STATE_ART, ART_STATE_BUSY, ART_STATE_UNREACHABLE,
@@ -43,6 +44,18 @@ _SALIENCY_MAX_DIM = 512
 # the centre keeps the framing natural without cancelling the effect.
 _SALIENCY_CENTRE_BIAS = 0.25
 
+# Caption box (bottom-right corner), sized relative to the image height so it
+# looks the same at any resolution: 39 px text and a 65 px margin in 4K.
+_CAPTION_FONT_RATIO = 0.018
+_CAPTION_MARGIN_RATIO = 0.03
+# Beyond this share of the image width, the caption is cut with an ellipsis.
+_CAPTION_MAX_WIDTH_RATIO = 0.5
+_CAPTION_BOX_RGBA = (0, 0, 0, 140)
+_CAPTION_TEXT_RGBA = (255, 255, 255, 230)
+# Inter Medium (SIL OFL, see fonts/Inter-OFL.txt), cut down to the Latin
+# scripts. The font bundled with Pillow lacks accents and typographic marks.
+_CAPTION_FONT = os.path.join(os.path.dirname(__file__), "fonts", "Inter-Medium.ttf")
+
 # Date fields that may appear in the metadata returned by the TV
 _DATE_FIELDS = ("image_date", "date", "create_date", "modified_date")
 # Date formats seen on the Samsung side (EXIF-like and ISO)
@@ -56,8 +69,9 @@ _DATE_FORMATS = (
 
 
 def prepare_image(image_path: str, width: int = 3840, height: int = 2160,
-                  mode: str = "fill", jpeg_quality: int = 85) -> bytes:
-    """Resize and convert an image for The Frame TV."""
+                  mode: str = "fill", jpeg_quality: int = 85,
+                  caption: str | None = None) -> bytes:
+    """Resize and convert an image for The Frame TV, optionally captioned."""
     if width <= 0 or height <= 0:
         raise ValueError(
             f"Invalid target dimensions: {width}x{height} (must be > 0)"
@@ -95,6 +109,9 @@ def prepare_image(image_path: str, width: int = 3840, height: int = 2160,
         img = _crop_to_ratio(img, target_ratio, smart=(mode == "smart"))
         img = img.resize((width, height), Image.LANCZOS)
 
+    if caption:
+        img = _draw_caption(img, caption)
+
     for quality in (jpeg_quality, 80, 70, 60):
         buf = io.BytesIO()
         img.save(buf, format="JPEG", quality=quality, optimize=True)
@@ -109,6 +126,45 @@ def prepare_image(image_path: str, width: int = 3840, height: int = 2160,
     img_half.save(buf, format="JPEG", quality=70, optimize=True)
     _LOGGER.warning("Image downscaled to %dx%d", width // 2, height // 2)
     return buf.getvalue()
+
+
+def _fit_text(text: str, font: ImageFont.FreeTypeFont, max_width: float) -> str:
+    """Cut ``text`` with an ellipsis so it fits on one line of ``max_width`` px."""
+    if font.getlength(text) <= max_width:
+        return text
+    while text and font.getlength(text + "…") > max_width:
+        text = text[:-1]
+    return text.rstrip() + "…"
+
+
+def _draw_caption(img: Image.Image, caption: str) -> Image.Image:
+    """Draw ``caption`` on one line in a translucent box at the bottom right."""
+    text = " ".join(caption.split())
+    if not text:
+        return img
+
+    font_size = max(12, round(img.height * _CAPTION_FONT_RATIO))
+    try:
+        font = ImageFont.truetype(_CAPTION_FONT, font_size)
+    except OSError as err:
+        _LOGGER.warning("Caption font unavailable (%s), caption skipped", err)
+        return img
+
+    padding = round(font_size * 0.6)
+    margin = round(img.height * _CAPTION_MARGIN_RATIO)
+    text = _fit_text(text, font, img.width * _CAPTION_MAX_WIDTH_RATIO)
+
+    ascent, descent = font.getmetrics()
+    box_w = round(font.getlength(text)) + 2 * padding
+    box_h = ascent + descent + 2 * padding
+    x1, y1 = img.width - margin, img.height - margin
+    x0, y0 = x1 - box_w, y1 - box_h
+
+    overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+    draw.rounded_rectangle((x0, y0, x1, y1), radius=round(font_size * 0.4), fill=_CAPTION_BOX_RGBA)
+    draw.text((x0 + padding, y0 + padding), text, font=font, fill=_CAPTION_TEXT_RGBA)
+    return Image.alpha_composite(img.convert("RGBA"), overlay).convert("RGB")
 
 
 def _detect_faces(img: Image.Image) -> list[tuple[int, int, int, int]]:
@@ -509,9 +565,10 @@ def _sync_upload(image_path: str, tv_ip: str, tv_port: int,
     height = image_config.get("height", 2160)
     mode = image_config.get("mode", "fill")
     quality = image_config.get("jpeg_quality", 85)
+    caption = image_config.get("caption")
 
     _LOGGER.info("Preparing image: %s", image_path)
-    image_data = prepare_image(image_path, width, height, mode, quality)
+    image_data = prepare_image(image_path, width, height, mode, quality, caption)
     _LOGGER.info("  -> %d KB", len(image_data) // 1024)
 
     _LOGGER.info("Connecting to the TV: %s:%d", tv_ip, tv_port)

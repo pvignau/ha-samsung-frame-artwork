@@ -22,6 +22,9 @@
           "icloud_enabled": "Enable iCloud shared album",
           "icloud_weight": "iCloud selection weight (1–100)",
           "icloud_share_url": "iCloud shared album URL",
+          "custom_enabled": "Enable custom URLs",
+          "custom_weight": "Custom URLs selection weight (1–100)",
+          "custom_urls": "Custom URLs",
           "interval_hours": "Rotation interval (hours)",
           "skip_when_watching": "Do not interrupt viewing",
           "history_size": "Anti-repeat history size (images)",
@@ -30,7 +33,8 @@
           "index_refresh_days": "Catalogue refresh interval (days)",
           "image_mode": "Image fit mode",
           "image_width": "Target width (pixels)",
-          "image_height": "Target height (pixels)"
+          "image_height": "Target height (pixels)",
+          "show_caption": "Show a caption"
         },
         "data_description": {
           "theframetv_enabled": "Use the free artworks published on theframetv.com.",
@@ -38,6 +42,9 @@
           "icloud_enabled": "Use the photos of a shared iCloud album.",
           "icloud_weight": "Relative share of the iCloud album in the random draw, compared with the other enabled sources.",
           "icloud_share_url": "Public link of the shared album. In the Photos app: open the album, turn on Public Website, then copy the link it offers.",
+          "custom_enabled": "Use images from URLs of your choice, like WallPanel does. Respecting the terms of each service is your responsibility.",
+          "custom_weight": "Relative share of the custom URLs in the random draw, compared with the other enabled sources.",
+          "custom_urls": "One URL per line. A URL may answer with an image, or with JSON: then add after it, separated by a space, the path of the image URL in the JSON (for example urls.full). See the README for examples and placeholders.",
           "interval_hours": "Delay between two artwork changes, in hours.",
           "skip_when_watching": "When the TV is switched on and showing content, the scheduled rotation is skipped instead of forcing Art Mode, and retried every 15 minutes. Pressing the 'Update Artwork Now' button always pushes an image regardless.",
           "history_size": "Number of recently displayed artworks remembered, so they are not drawn again too soon.",
@@ -46,7 +53,8 @@
           "index_refresh_days": "How often the theframetv.com catalogue is scraped again to discover newly published artworks.",
           "image_mode": "fill = the image is cropped to fill the whole screen; fit = the whole image is kept, with black bars; smart = like fill, but the crop is placed on the faces found in the photo, or on its busiest area when no face is detected.",
           "image_width": "Target width before upload. 3840 matches a 4K Frame TV.",
-          "image_height": "Target height before upload. 2160 matches a 4K Frame TV."
+          "image_height": "Target height before upload. 2160 matches a 4K Frame TV.",
+          "show_caption": "Writes the author and the title of the artwork on one line, in a box at the bottom right of the image. Only for sources that provide them: theframetv.com and custom URLs returning JSON, not iCloud photos."
         }
       }
     },
@@ -54,6 +62,8 @@
       "cannot_connect": "Cannot connect to the TV. Check the IP, port and that the TV is powered on.",
       "icloud_url_required": "An iCloud shared album URL is required when iCloud is enabled.",
       "icloud_url_invalid": "This does not look like an iCloud shared album link. Open the album in the Photos app, turn on Public Website, and copy the link it gives you.",
+      "custom_urls_required": "At least one URL is required when custom URLs are enabled.",
+      "custom_urls_invalid": "Each line must start with a web address (http or https).",
       "no_source_enabled": "At least one artwork source must be enabled."
     },
     "abort": {
@@ -71,6 +81,9 @@
           "icloud_enabled": "Enable iCloud shared album",
           "icloud_weight": "iCloud selection weight (1–100)",
           "icloud_share_url": "iCloud shared album URL",
+          "custom_enabled": "Enable custom URLs",
+          "custom_weight": "Custom URLs selection weight (1–100)",
+          "custom_urls": "Custom URLs",
           "interval_hours": "Rotation interval (hours)",
           "skip_when_watching": "Do not interrupt viewing",
           "history_size": "Anti-repeat history size (images)",
@@ -79,7 +92,8 @@
           "index_refresh_days": "Catalogue refresh interval (days)",
           "image_mode": "Image fit mode",
           "image_width": "Target width (pixels)",
-          "image_height": "Target height (pixels)"
+          "image_height": "Target height (pixels)",
+          "show_caption": "Show a caption"
         },
         "data_description": {
           "theframetv_enabled": "Use the free artworks published on theframetv.com.",
@@ -87,6 +101,9 @@
           "icloud_enabled": "Use the photos of a shared iCloud album.",
           "icloud_weight": "Relative share of the iCloud album in the random draw, compared with the other enabled sources.",
           "icloud_share_url": "Public link of the shared album. In the Photos app: open the album, turn on Public Website, then copy the link it offers.",
+          "custom_enabled": "Use images from URLs of your choice, like WallPanel does. Respecting the terms of each service is your responsibility.",
+          "custom_weight": "Relative share of the custom URLs in the random draw, compared with the other enabled sources.",
+          "custom_urls": "One URL per line. A URL may answer with an image, or with JSON: then add after it, separated by a space, the path of the image URL in the JSON (for example urls.full). See the README for examples and placeholders.",
           "interval_hours": "Delay between two artwork changes, in hours.",
           "skip_when_watching": "When the TV is switched on and showing content, the scheduled rotation is skipped instead of forcing Art Mode, and retried every 15 minutes. Pressing the 'Update Artwork Now' button always pushes an image regardless.",
           "history_size": "Number of recently displayed artworks remembered, so they are not drawn again too soon.",
@@ -95,7 +112,8 @@
           "index_refresh_days": "How often the theframetv.com catalogue is scraped again to discover newly published artworks.",
           "image_mode": "fill = the image is cropped to fill the whole screen; fit = the whole image is kept, with black bars; smart = like fill, but the crop is placed on the faces found in the photo, or on its busiest area when no face is detected.",
           "image_width": "Target width before upload. 3840 matches a 4K Frame TV.",
-          "image_height": "Target height before upload. 2160 matches a 4K Frame TV."
+          "image_height": "Target height before upload. 2160 matches a 4K Frame TV.",
+          "show_caption": "Writes the author and the title of the artwork on one line, in a box at the bottom right of the image. Only for sources that provide them: theframetv.com and custom URLs returning JSON, not iCloud photos."
         }
       }
     },
@@ -103,6 +121,8 @@
       "cannot_connect": "Cannot connect to the TV. Check the IP, port and that the TV is powered on.",
       "icloud_url_required": "An iCloud shared album URL is required when iCloud is enabled.",
       "icloud_url_invalid": "This does not look like an iCloud shared album link. Open the album in the Photos app, turn on Public Website, and copy the link it gives you.",
+      "custom_urls_required": "At least one URL is required when custom URLs are enabled.",
+      "custom_urls_invalid": "Each line must start with a web address (http or https).",
       "no_source_enabled": "At least one artwork source must be enabled."
     }
   },

@@ -13,5 +13,5 @@
     "samsungtvws@git+https://github.com/NickWaterton/samsung-tv-ws-api.git@fe95ef1d784cd32f49bf9a07ec479576574eea07",
     "beautifulsoup4>=4.12.0"
   ],
-  "version": "1.4.0"
+  "version": "1.5.0"
 }

@@ -22,6 +22,9 @@
           "icloud_enabled": "Activer un album partagé iCloud",
           "icloud_weight": "Poids d'iCloud",
           "icloud_share_url": "URL de l'album partagé iCloud",
+          "custom_enabled": "Activer les URL personnalisées",
+          "custom_weight": "Poids des URL personnalisées",
+          "custom_urls": "URL personnalisées",
           "interval_hours": "Intervalle de rotation (heures)",
           "skip_when_watching": "Ne pas interrompre le visionnage",
           "history_size": "Taille de l'historique",
@@ -30,7 +33,8 @@
           "index_refresh_days": "Fréquence de rafraîchissement du catalogue (jours)",
           "image_mode": "Mode de redimensionnement",
           "image_width": "Largeur de l'image (pixels)",
-          "image_height": "Hauteur de l'image (pixels)"
+          "image_height": "Hauteur de l'image (pixels)",
+          "show_caption": "Afficher une légende"
         },
         "data_description": {
           "theframetv_enabled": "Utiliser les œuvres gratuites publiées sur theframetv.com.",
@@ -38,6 +42,9 @@
           "icloud_enabled": "Utiliser les photos d'un album partagé iCloud.",
           "icloud_weight": "Part relative de l'album iCloud dans le tirage aléatoire, par rapport aux autres sources activées.",
           "icloud_share_url": "Lien public de l'album partagé. Dans l'app Photos : ouvrir l'album, activer « Site Web public », puis copier le lien proposé.",
+          "custom_enabled": "Utiliser des images provenant d'URL de votre choix, comme le fait WallPanel. Le respect des conditions d'utilisation de chaque service est de votre responsabilité.",
+          "custom_weight": "Part relative des URL personnalisées dans le tirage aléatoire, par rapport aux autres sources activées.",
+          "custom_urls": "Une URL par ligne. Une URL peut renvoyer une image, ou du JSON : ajoutez alors après elle, séparé par un espace, le chemin de l'URL de l'image dans le JSON (par exemple urls.full). Voir le README pour des exemples et les variables disponibles.",
           "interval_hours": "Délai entre deux changements d'œuvre, en heures.",
           "skip_when_watching": "Quand la TV est allumée sur du contenu, la rotation programmée est ignorée au lieu de forcer le mode Art, puis réessayée toutes les 15 minutes. Le bouton « Update Artwork Now » pousse une image dans tous les cas.",
           "history_size": "Nombre d'œuvres récemment affichées mémorisées, afin de ne pas les retirer au sort trop tôt.",
@@ -46,7 +53,8 @@
           "index_refresh_days": "Fréquence à laquelle le catalogue theframetv.com est re-parcouru pour découvrir les nouvelles œuvres publiées.",
           "image_mode": "fill = l'image est recadrée pour remplir tout l'écran ; fit = l'image entière est conservée, avec des bandes noires ; smart = comme fill, mais le cadrage est calé sur les visages détectés, ou sur la zone la plus détaillée si aucun visage n'est trouvé.",
           "image_width": "Largeur cible avant envoi. 3840 correspond à une TV Frame 4K.",
-          "image_height": "Hauteur cible avant envoi. 2160 correspond à une TV Frame 4K."
+          "image_height": "Hauteur cible avant envoi. 2160 correspond à une TV Frame 4K.",
+          "show_caption": "Inscrit l'auteur et le titre de l'œuvre sur une ligne, dans un encart en bas à droite de l'image. Uniquement pour les sources qui les fournissent : theframetv.com et les URL personnalisées renvoyant du JSON, pas les photos iCloud."
         }
       }
     },
@@ -54,7 +62,9 @@
       "cannot_connect": "Impossible de joindre la TV à cette adresse et sur ce port. Vérifiez qu'elle est allumée, connectée au réseau, et que l'IP et le port sont corrects.",
       "icloud_url_required": "Une URL d'album partagé iCloud est obligatoire lorsque la source iCloud est activée.",
       "icloud_url_invalid": "Ce lien ne ressemble pas à un lien d'album partagé iCloud. Ouvrez l'album dans l'app Photos, activez « Site Web public », puis copiez le lien proposé.",
-      "no_source_enabled": "Au moins une source doit être activée : theframetv.com, l'album iCloud, ou les deux."
+      "custom_urls_required": "Au moins une URL est obligatoire lorsque les URL personnalisées sont activées.",
+      "custom_urls_invalid": "Chaque ligne doit commencer par une adresse web (http ou https).",
+      "no_source_enabled": "Au moins une source doit être activée : theframetv.com, l'album iCloud ou des URL personnalisées."
     },
     "abort": {
       "already_configured": "Cette TV est déjà configurée."
@@ -71,6 +81,9 @@
           "icloud_enabled": "Activer un album partagé iCloud",
           "icloud_weight": "Poids d'iCloud",
           "icloud_share_url": "URL de l'album partagé iCloud",
+          "custom_enabled": "Activer les URL personnalisées",
+          "custom_weight": "Poids des URL personnalisées",
+          "custom_urls": "URL personnalisées",
           "interval_hours": "Intervalle de rotation (heures)",
           "skip_when_watching": "Ne pas interrompre le visionnage",
           "history_size": "Taille de l'historique",
@@ -79,7 +92,8 @@
           "index_refresh_days": "Fréquence de rafraîchissement du catalogue (jours)",
           "image_mode": "Mode de redimensionnement",
           "image_width": "Largeur de l'image (pixels)",
-          "image_height": "Hauteur de l'image (pixels)"
+          "image_height": "Hauteur de l'image (pixels)",
+          "show_caption": "Afficher une légende"
         },
         "data_description": {
           "theframetv_enabled": "Utiliser les œuvres gratuites publiées sur theframetv.com.",
@@ -87,6 +101,9 @@
           "icloud_enabled": "Utiliser les photos d'un album partagé iCloud.",
           "icloud_weight": "Part relative de l'album iCloud dans le tirage aléatoire, par rapport aux autres sources activées.",
           "icloud_share_url": "Lien public de l'album partagé. Dans l'app Photos : ouvrir l'album, activer « Site Web public », puis copier le lien proposé.",
+          "custom_enabled": "Utiliser des images provenant d'URL de votre choix, comme le fait WallPanel. Le respect des conditions d'utilisation de chaque service est de votre responsabilité.",
+          "custom_weight": "Part relative des URL personnalisées dans le tirage aléatoire, par rapport aux autres sources activées.",
+          "custom_urls": "Une URL par ligne. Une URL peut renvoyer une image, ou du JSON : ajoutez alors après elle, séparé par un espace, le chemin de l'URL de l'image dans le JSON (par exemple urls.full). Voir le README pour des exemples et les variables disponibles.",
           "interval_hours": "Délai entre deux changements d'œuvre, en heures.",
           "skip_when_watching": "Quand la TV est allumée sur du contenu, la rotation programmée est ignorée au lieu de forcer le mode Art, puis réessayée toutes les 15 minutes. Le bouton « Update Artwork Now » pousse une image dans tous les cas.",
           "history_size": "Nombre d'œuvres récemment affichées mémorisées, afin de ne pas les retirer au sort trop tôt.",
@@ -95,7 +112,8 @@
           "index_refresh_days": "Fréquence à laquelle le catalogue theframetv.com est re-parcouru pour découvrir les nouvelles œuvres publiées.",
           "image_mode": "fill = l'image est recadrée pour remplir tout l'écran ; fit = l'image entière est conservée, avec des bandes noires ; smart = comme fill, mais le cadrage est calé sur les visages détectés, ou sur la zone la plus détaillée si aucun visage n'est trouvé.",
           "image_width": "Largeur cible avant envoi. 3840 correspond à une TV Frame 4K.",
-          "image_height": "Hauteur cible avant envoi. 2160 correspond à une TV Frame 4K."
+          "image_height": "Hauteur cible avant envoi. 2160 correspond à une TV Frame 4K.",
+          "show_caption": "Inscrit l'auteur et le titre de l'œuvre sur une ligne, dans un encart en bas à droite de l'image. Uniquement pour les sources qui les fournissent : theframetv.com et les URL personnalisées renvoyant du JSON, pas les photos iCloud."
         }
       }
     },
@@ -103,7 +121,9 @@
       "cannot_connect": "Impossible de joindre la TV à cette adresse et sur ce port. Vérifiez qu'elle est allumée, connectée au réseau, et que l'IP et le port sont corrects.",
       "icloud_url_required": "Une URL d'album partagé iCloud est obligatoire lorsque la source iCloud est activée.",
       "icloud_url_invalid": "Ce lien ne ressemble pas à un lien d'album partagé iCloud. Ouvrez l'album dans l'app Photos, activez « Site Web public », puis copiez le lien proposé.",
-      "no_source_enabled": "Au moins une source doit être activée : theframetv.com, l'album iCloud, ou les deux."
+      "custom_urls_required": "Au moins une URL est obligatoire lorsque les URL personnalisées sont activées.",
+      "custom_urls_invalid": "Chaque ligne doit commencer par une adresse web (http ou https).",
+      "no_source_enabled": "Au moins une source doit être activée : theframetv.com, l'album iCloud ou des URL personnalisées."
     }
   },
   "services": {

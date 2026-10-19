@@ -20,6 +20,7 @@ JPEG (≤ 1.9 MB, the TV limit) and sends it to the TV through
 |---|---|
 | **theframetv.com** | Catalogue of free 4K artworks, scraped and cached locally |
 | **iCloud shared album** | Photos from a public iCloud album (`https://photos.icloud.com/shared/album/…`) |
+| **Custom URLs** | Images from URLs of your choice, the way [WallPanel](https://github.com/j-a-n/lovelace-wallpanel) does |
 
 A persistent history prevents the same artworks from coming back until the
 catalogue has been cycled through.
@@ -36,10 +37,34 @@ Apple migrated shared albums to **CloudKit**. The integration handles both:
 When the original is a HEIC, which Pillow cannot read without a plugin, Apple's
 own JPEG derivative is used instead.
 
+#### Custom URLs
+
+One URL per line. Each rotation drawing this source picks one line at random.
+
+- When the URL answers with an **image**, that image is used as is.
+- When it answers with **JSON**, add after the URL, separated by a space, the
+  path of the image URL inside the JSON. Lists met along the path are walked
+  through: `hits.largeImageURL` reads every hit. Without a path, a few common
+  locations are tried (`urls.full`, `hdurl`, `primaryImage`, `src.original`…).
+  When the JSON holds several images, one not shown recently is picked, and
+  the title and author found next to it name the artwork.
+
+`${width}`, `${height}` (the target resolution) and `${timestamp}` are replaced
+before the request, so URLs written for WallPanel work unchanged.
+
+```text
+https://picsum.photos/${width}/${height}?random=${timestamp}
+https://api.unsplash.com/photos/random?client_id=YOUR_ACCESS_KEY&orientation=landscape&count=30&query=mountains urls.full
+```
+
+Respecting the terms of each service is up to you. Unsplash, for one, needs
+your own access key, and its API guidelines restrict wallpaper-style uses.
+The query string is left out of the logs, as it often carries an API key.
+
 ## Entities and services
 
 - `sensor.<tv>_current_artwork` — artwork currently displayed (attributes:
-  source, date, local path)
+  source, date, local path, plus the author when a custom URL provides it)
 - `button.<tv>_update_artwork_now` — push a new artwork right now
 - Service `samsung_frame.update_artwork` — same, from an automation
 - Service `samsung_frame.refresh_theframetv_index` — force a catalogue re-scrape
@@ -53,6 +78,7 @@ own JPEG derivative is used instead.
 | `skip_when_watching` | enabled | **Do not interrupt viewing** (see below) |
 | `image_mode` | `fill` | `fill` = centre crop, `fit` = letterboxed, `smart` = crop on the subject |
 | `image_width` / `image_height` | 3840 × 2160 | Target resolution |
+| `show_caption` | disabled | Author and title in a box at the bottom right of the image |
 | `max_tv_images` | 10 | **Images kept in the TV memory** |
 | `cache_max_mb` | 300 | Maximum size of the local disk cache |
 | `index_refresh_days` | 7 | How often the catalogue is re-scraped |
@@ -138,6 +164,18 @@ web client. Both sources may stop working without notice. When that happens, the
 Home Assistant log names the exact step that fails.
 
 ## Release notes
+
+### 1.5.0
+
+New **custom URLs** source, modelled on WallPanel's `image_url`: images from
+any URL answering with an image, or with JSON listing images. When the drawn
+source fails, every other enabled source is now tried in turn, instead of a
+single fallback.
+
+New **`show_caption`** option: the author and the title of the artwork are
+written on one line, in a translucent box at the bottom right of the image.
+It applies to theframetv.com and to custom URLs returning JSON; iCloud photos
+carry nothing worth showing.
 
 ### 1.4.0
 

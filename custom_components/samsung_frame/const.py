@@ -11,6 +11,9 @@ CONF_THEFRAMETV_WEIGHT = "theframetv_weight"
 CONF_ICLOUD_ENABLED = "icloud_enabled"
 CONF_ICLOUD_WEIGHT = "icloud_weight"
 CONF_ICLOUD_URL = "icloud_share_url"
+CONF_CUSTOM_ENABLED = "custom_enabled"
+CONF_CUSTOM_WEIGHT = "custom_weight"
+CONF_CUSTOM_URLS = "custom_urls"
 CONF_INTERVAL_HOURS = "interval_hours"
 CONF_HISTORY_SIZE = "history_size"
 CONF_IMAGE_MODE = "image_mode"
@@ -20,11 +23,13 @@ CONF_MAX_TV_IMAGES = "max_tv_images"
 CONF_CACHE_MAX_MB = "cache_max_mb"
 CONF_INDEX_REFRESH_DAYS = "index_refresh_days"
 CONF_SKIP_WHEN_WATCHING = "skip_when_watching"
+CONF_SHOW_CAPTION = "show_caption"
 
 # Default values
 DEFAULT_TV_PORT = 8002
 DEFAULT_THEFRAMETV_WEIGHT = 50
 DEFAULT_ICLOUD_WEIGHT = 50
+DEFAULT_CUSTOM_WEIGHT = 50
 DEFAULT_INTERVAL_HOURS = 6
 DEFAULT_HISTORY_SIZE = 20
 DEFAULT_IMAGE_MODE = "fill"
@@ -38,6 +43,7 @@ DEFAULT_MAX_TV_IMAGES = 10
 DEFAULT_CACHE_MAX_MB = 300
 DEFAULT_INDEX_REFRESH_DAYS = 7
 DEFAULT_SKIP_WHEN_WATCHING = True
+DEFAULT_SHOW_CAPTION = False
 
 # When a rotation is skipped because the TV is in use, retry this often instead
 # of waiting for the next full interval – otherwise switching the TV off in the

@@ -9,23 +9,26 @@ from typing import Any
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
+from homeassistant.helpers.selector import TextSelector, TextSelectorConfig
 
 from .const import (
     DOMAIN,
     CONF_TV_IP, CONF_TV_PORT,
     CONF_THEFRAMETV_ENABLED, CONF_THEFRAMETV_WEIGHT,
     CONF_ICLOUD_ENABLED, CONF_ICLOUD_WEIGHT, CONF_ICLOUD_URL,
+    CONF_CUSTOM_ENABLED, CONF_CUSTOM_WEIGHT, CONF_CUSTOM_URLS,
     CONF_INTERVAL_HOURS, CONF_HISTORY_SIZE,
     CONF_IMAGE_MODE, CONF_IMAGE_WIDTH, CONF_IMAGE_HEIGHT,
     CONF_MAX_TV_IMAGES, CONF_CACHE_MAX_MB, CONF_INDEX_REFRESH_DAYS,
-    CONF_SKIP_WHEN_WATCHING,
+    CONF_SKIP_WHEN_WATCHING, CONF_SHOW_CAPTION,
     DEFAULT_TV_PORT, DEFAULT_THEFRAMETV_WEIGHT, DEFAULT_ICLOUD_WEIGHT,
-    DEFAULT_INTERVAL_HOURS, DEFAULT_HISTORY_SIZE,
+    DEFAULT_CUSTOM_WEIGHT, DEFAULT_INTERVAL_HOURS, DEFAULT_HISTORY_SIZE,
     DEFAULT_IMAGE_MODE, DEFAULT_IMAGE_WIDTH, DEFAULT_IMAGE_HEIGHT,
     DEFAULT_MAX_TV_IMAGES, DEFAULT_CACHE_MAX_MB, DEFAULT_INDEX_REFRESH_DAYS,
-    DEFAULT_SKIP_WHEN_WATCHING,
+    DEFAULT_SKIP_WHEN_WATCHING, DEFAULT_SHOW_CAPTION,
     MIN_IMAGE_DIMENSION, MAX_IMAGE_DIMENSION, IMAGE_MODES,
 )
+from .sources import custom_url
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -92,6 +95,16 @@ def build_options_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
             CONF_ICLOUD_URL, default=_default(CONF_ICLOUD_URL, "")
         ): str,
         vol.Optional(
+            CONF_CUSTOM_ENABLED, default=_default(CONF_CUSTOM_ENABLED, False)
+        ): bool,
+        vol.Optional(
+            CONF_CUSTOM_WEIGHT,
+            default=_default(CONF_CUSTOM_WEIGHT, DEFAULT_CUSTOM_WEIGHT),
+        ): vol.All(int, vol.Range(min=1, max=100)),
+        vol.Optional(
+            CONF_CUSTOM_URLS, default=_default(CONF_CUSTOM_URLS, "")
+        ): TextSelector(TextSelectorConfig(multiline=True)),
+        vol.Optional(
             CONF_INTERVAL_HOURS,
             default=_default(CONF_INTERVAL_HOURS, DEFAULT_INTERVAL_HOURS),
         ): vol.All(int, vol.Range(min=1, max=168)),
@@ -124,6 +137,9 @@ def build_options_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
         vol.Optional(
             CONF_IMAGE_HEIGHT, default=_default(CONF_IMAGE_HEIGHT, DEFAULT_IMAGE_HEIGHT)
         ): vol.All(int, vol.Range(min=MIN_IMAGE_DIMENSION, max=MAX_IMAGE_DIMENSION)),
+        vol.Optional(
+            CONF_SHOW_CAPTION, default=_default(CONF_SHOW_CAPTION, DEFAULT_SHOW_CAPTION)
+        ): bool,
     })
 
 
@@ -144,7 +160,19 @@ def _validate_sources(user_input: dict) -> dict:
         elif not ICLOUD_URL_RE.match(icloud_url):
             errors[CONF_ICLOUD_URL] = "icloud_url_invalid"
 
-    if not user_input.get(CONF_THEFRAMETV_ENABLED) and not icloud_enabled:
+    custom_enabled = bool(user_input.get(CONF_CUSTOM_ENABLED))
+    custom_entries = custom_url.parse_lines(user_input.get(CONF_CUSTOM_URLS) or "")
+
+    if custom_enabled and not custom_entries:
+        errors[CONF_CUSTOM_URLS] = "custom_urls_required"
+    elif any(not custom_url.is_valid_url(url) for url, _ in custom_entries):
+        errors[CONF_CUSTOM_URLS] = "custom_urls_invalid"
+
+    if (
+        not user_input.get(CONF_THEFRAMETV_ENABLED)
+        and not icloud_enabled
+        and not custom_enabled
+    ):
         errors["base"] = "no_source_enabled"
 
     return errors

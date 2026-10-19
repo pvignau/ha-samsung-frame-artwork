@@ -55,8 +55,12 @@ class SamsungFrameSensor(CoordinatorEntity[SamsungFrameCoordinator], SensorEntit
     @property
     def extra_state_attributes(self) -> dict:
         data = self.coordinator.data or {}
-        return {
+        attributes = {
             "source": data.get("source"),
             "last_update": data.get("last_update"),
             "image_path": data.get("path"),
         }
+        # Credit, only known for some custom URLs.
+        if data.get("author"):
+            attributes["author"] = data["author"]
+        return attributes
